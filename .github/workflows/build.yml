@@ -47,7 +47,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libsecret-1-dev libayatana-appindicator3-dev pkg-config
 
       - name: Build Global Version
         shell: bash
@@ -61,7 +61,11 @@ jobs:
 
       - name: Wails Build
         run: |
-          wails build -platform ${{ matrix.os }}/${{ matrix.arch }} -ldflags "-X 'github.com/remmody/VaultixIMQ/internal/app.Version=v$BUILD_VERSION'"
+          if [ "${{ matrix.os }}" == "linux" ]; then
+            wails build -platform ${{ matrix.os }}/${{ matrix.arch }} -tags webkit2_41 -ldflags "-s -w -X 'github.com/remmody/VaultixIMQ/internal/app.Version=v$BUILD_VERSION'"
+          else
+            wails build -platform ${{ matrix.os }}/${{ matrix.arch }} -ldflags "-X 'github.com/remmody/VaultixIMQ/internal/app.Version=v$BUILD_VERSION'"
+          fi
 
       - name: Prepare Artifacts
         shell: bash
