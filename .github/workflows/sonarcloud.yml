@@ -1,31 +1,32 @@
-name: SonarCloud
+name: SonarCloud analysis
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
+  workflow_dispatch:
 
-# permissions moved to job level
+permissions:
+  pull-requests: read # allows SonarCloud to decorate PRs with analysis results
 
 jobs:
-  sonar:
+  Analysis:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
 
-      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.25'
 
-      - uses: actions/setup-node@1d11999a6aee6ff8e26f352cff6139a957051343 # v4.2.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
@@ -38,7 +39,14 @@ jobs:
       - name: Run tests with coverage
         run: go test ./... -coverprofile=cover.out
 
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@02ef91109b2d589e757aefcfb2854c2783fd7b19 # v4.0.0
+      - name: Analyze with SonarCloud
+        # Pinning the exact commit SHA for third-party action as per marketplace recommendation
+        uses: SonarSource/sonarcloud-github-action@4006f663ecaf1f8093e8e4abb9227f6041f52216 # v2.2.0
         env:
-          SONAR_TOKEN:  ${{ secrets.SONAR_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          # Optional: add args here if you want to override sonar-project.properties
+          args:
+            -Dsonar.projectKey=remmody_VaultixIMQ
+            -Dsonar.organization=r3-code
+            -Dsonar.go.coverage.reportPaths=cover.out

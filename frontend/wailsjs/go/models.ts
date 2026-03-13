@@ -12,7 +12,7 @@ export namespace app {
 	
 	    constructor(source: unknown = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source as string);
-	        const s = source as any;
+	        const s = source as Record<string, any>;
 	        this.version = s["version"];
 	        this.author = s["author"];
 	        this.license = s["license"];
@@ -35,7 +35,7 @@ export namespace app {
 	
 	    constructor(source: unknown = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source as string);
-	        const s = source as any;
+	        const s = source as Record<string, any>;
 	        this.sync_interval = s["sync_interval"];
 	        this.auto_login = s["auto_login"];
 	        this.notifications = s["notifications"];
@@ -59,7 +59,7 @@ export namespace app {
 	
 	    constructor(source: unknown = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source as string);
-	        const s = source as any;
+	        const s = source as Record<string, any>;
 	        this.has_update = s["has_update"];
 	        this.latest_version = s["latest_version"];
 	        this.current_version = s["current_version"];
@@ -88,7 +88,7 @@ export namespace mail {
 	
 	    constructor(source: unknown = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source as string);
-	        const s = source as any;
+	        const s = source as Record<string, any>;
 	        this.email = s["email"];
 	        this.password = s["password"];
 	        this.imap_host = s["imap_host"];
@@ -114,7 +114,7 @@ export namespace mail {
 	
 	    constructor(source: unknown = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source as string);
-	        const s = source as any;
+	        const s = source as Record<string, any>;
 	        this.uid = s["uid"];
 	        this.subject = s["subject"];
 	        this.from = s["from"];
@@ -140,7 +140,7 @@ export namespace totp {
 	
 	    constructor(source: unknown = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source as string);
-	        const s = source as any;
+	        const s = source as Record<string, any>;
 	        this.account_name = s["account_name"];
 	        this.issuer = s["issuer"];
 	        this.secret = s["secret"];
@@ -156,7 +156,7 @@ export namespace totp {
 	
 	    constructor(source: unknown = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source as string);
-	        const s = source as any;
+	        const s = source as Record<string, any>;
 	        this.code = s["code"];
 	        this.timeLeft = s["timeLeft"];
 	    }
