@@ -60,6 +60,7 @@ jobs:
         run: npm install --ignore-scripts
 
       - name: Wails Build
+        shell: bash
         run: |
           if [ "${{ matrix.os }}" == "linux" ]; then
             wails build -platform ${{ matrix.os }}/${{ matrix.arch }} -tags webkit2_41 -ldflags "-s -w -X 'github.com/remmody/VaultixIMQ/internal/app.Version=v$BUILD_VERSION'"
