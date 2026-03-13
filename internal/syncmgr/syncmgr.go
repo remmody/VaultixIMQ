@@ -14,11 +14,11 @@ type SyncManager struct {
 	nextSync   time.Time
 	interval   int
 	mu         sync.Mutex
-	syncFunc   func(mail.Account)
+	syncFunc   func(context.Context, mail.Account)
 	getAccs    func() []mail.Account
 }
 
-func NewSyncManager(syncFunc func(mail.Account), getAccs func() []mail.Account) *SyncManager {
+func NewSyncManager(syncFunc func(context.Context, mail.Account), getAccs func() []mail.Account) *SyncManager {
 	return &SyncManager{
 		syncFunc: syncFunc,
 		getAccs:  getAccs,
@@ -70,7 +70,7 @@ func (m *SyncManager) Start(ctx context.Context, interval int) {
 func (m *SyncManager) SyncAll() {
 	accounts := m.getAccs()
 	for _, acc := range accounts {
-		go m.syncFunc(acc)
+		go m.syncFunc(m.ctx, acc)
 	}
 }
 

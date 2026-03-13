@@ -10,8 +10,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap"
-        rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+        rel="stylesheet" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" crossorigin="anonymous">
     <style>
         body {
             background-color: #09090b;
@@ -25,8 +25,10 @@
         }
 
         .bg-pattern {
-            background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-            background: radial-gradient(circle at center, rgba(39, 39, 42, 0.4) 0%, transparent 100%), #09090b;
+            background: 
+                radial-gradient(circle at center, rgba(39, 39, 42, 0.4) 0%, transparent 100%),
+                radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+                #09090b;
         }
 
         .saas-card {
@@ -360,7 +362,8 @@
                     <template x-if="selectedMessage">
                         <div class="p-4 border-b border-white/5 bg-zinc-900/10">
                             <div class="mb-4">
-                                <h1 class="text-xl font-bold text-white leading-tight" x-text="selectedMessage.subject">
+                                <h1 class="text-xl font-bold text-white leading-tight" x-text="selectedMessage.subject || 'No Subject'">
+                                    No Subject
                                 </h1>
                                 <div class="text-[10px] text-zinc-600 font-mono mt-1"
                                     x-text="'UID: ' + selectedMessage.uid"></div>
@@ -399,7 +402,7 @@
 
                     <div class="flex-1 overflow-hidden flex flex-col min-h-0" id="message-body">
                         <template x-if="selectedMessage">
-                            <iframe class="w-full h-full border-none bg-white rounded-b-lg" :srcdoc="messageBody"
+                            <iframe class="w-full h-full border-none bg-white rounded-b-lg" :srcdoc="messageBody" title="Message Content"
                                 sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"></iframe>
                         </template>
                         <div x-show="!selectedMessage"
@@ -424,13 +427,13 @@
             <h3 class="text-lg font-bold text-white">Add IMAP Account</h3>
             <div class="space-y-3">
                 <div>
-                    <label class="text-[10px] text-zinc-500 uppercase font-bold">Email</label>
-                    <input type="email" x-model="newAcc.email" autocomplete="off"
+                    <label for="acc-email" class="text-[10px] text-zinc-500 uppercase font-bold">Email</label>
+                    <input id="acc-email" type="email" x-model="newAcc.email" autocomplete="off"
                         class="w-full bg-zinc-950 border border-white/10 rounded-md py-2 px-3 text-sm focus:border-blue-500 focus:outline-none transition-colors">
                 </div>
                 <div>
-                    <label class="text-[10px] text-zinc-500 uppercase font-bold">Password</label>
-                    <input type="password" x-model="newAcc.password" autocomplete="off"
+                    <label for="acc-pass" class="text-[10px] text-zinc-500 uppercase font-bold">Password</label>
+                    <input id="acc-pass" type="password" x-model="newAcc.password" autocomplete="off"
                         class="w-full bg-zinc-950 border border-white/10 rounded-md py-2 px-3 text-sm focus:border-blue-500 focus:outline-none transition-colors">
                 </div>
                 <div class="grid grid-cols-2 gap-3">
@@ -440,8 +443,8 @@
                             class="w-full bg-zinc-950 border border-white/10 rounded-md py-2 px-3 text-sm focus:border-blue-500 focus:outline-none transition-colors">
                     </div>
                     <div>
-                        <label class="text-[10px] text-zinc-500 uppercase font-bold">Port</label>
-                        <input type="text" x-model="newAcc.port" placeholder="993" autocomplete="off"
+                        <label for="acc-port" class="text-[10px] text-zinc-500 uppercase font-bold">Port</label>
+                        <input id="acc-port" type="text" x-model="newAcc.port" placeholder="993" autocomplete="off"
                             class="w-full bg-zinc-950 border border-white/10 rounded-md py-2 px-3 text-sm focus:border-blue-500 focus:outline-none transition-colors">
                     </div>
                 </div>

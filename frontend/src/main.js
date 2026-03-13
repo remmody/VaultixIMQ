@@ -34,7 +34,7 @@ import {
 } from '../wailsjs/go/app/App';
 import * as runtime from '../wailsjs/runtime';
 
-window.Alpine = Alpine;
+globalThis.Alpine = Alpine;
 
 console.log("VaultixIMQ main.js loading...");
 
@@ -112,9 +112,11 @@ document.addEventListener('alpine:init', () => {
             }
 
             // Inactivity Tracker
-            window.addEventListener('mousemove', () => { this.lastActivity = Date.now(); });
-            window.addEventListener('keydown', () => { this.lastActivity = Date.now(); });
-            window.addEventListener('click', () => { this.lastActivity = Date.now(); });
+            // Inactivity Tracker
+            const updateActivity = () => { this.lastActivity = Date.now(); };
+            globalThis.addEventListener('mousemove', updateActivity);
+            globalThis.addEventListener('keydown', updateActivity);
+            globalThis.addEventListener('click', updateActivity);
 
             setInterval(async () => {
                 if (!this.isLocked && this.settings.auto_lock_interval > 0) {
@@ -142,8 +144,7 @@ document.addEventListener('alpine:init', () => {
             }, 1000);
 
             runtime.EventsOn("sync_start", (email) => {
-                const acc = this.accounts.find(a => a.email === email);
-                if (acc) acc.status = 'syncing';
+                this.updateAccountStatus(email, 'syncing');
             });
 
             runtime.EventsOn("sync_complete", async (email) => {
@@ -515,6 +516,11 @@ document.addEventListener('alpine:init', () => {
             } catch (e) {
                 console.error("Failed to check for updates:", e);
             }
+        },
+
+        updateAccountStatus(email, status) {
+            const acc = this.accounts.find(a => a.email === email);
+            if (acc) acc.status = status;
         },
     }));
 });

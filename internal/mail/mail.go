@@ -43,35 +43,47 @@ var IMAP_MAP = map[string][2]string{
 }
 
 func (a *Account) Finalize() {
+	a.trimFields()
+	a.resolveLegacy()
+	
+	if a.Host == "" || a.Port == "" {
+		a.lookupIMAP()
+	}
+
+	if a.Label == "" {
+		a.Label = strings.Split(a.Email, "@")[0]
+	}
+}
+
+func (a *Account) trimFields() {
 	a.Email = strings.TrimSpace(a.Email)
 	a.Host = strings.TrimSpace(a.Host)
 	a.Port = strings.TrimSpace(a.Port)
 	a.OldHost = strings.TrimSpace(a.OldHost)
 	a.OldPort = strings.TrimSpace(a.OldPort)
+}
 
+func (a *Account) resolveLegacy() {
 	if a.Host == "" && a.OldHost != "" {
 		a.Host = a.OldHost
 	}
 	if a.Port == "" && a.OldPort != "" {
 		a.Port = a.OldPort
 	}
-	
-	if a.Host == "" || a.Port == "" {
-		dom := strings.Split(a.Email, "@")
-		if len(dom) > 1 {
-			domain := strings.ToLower(strings.TrimSpace(dom[1]))
-			if cfg, ok := IMAP_MAP[domain]; ok {
-				if a.Host == "" { a.Host = cfg[0] }
-				if a.Port == "" { a.Port = cfg[1] }
-			} else {
-				if a.Host == "" { a.Host = "imap." + domain }
-				if a.Port == "" { a.Port = "993" }
-			}
-		}
-	}
+}
 
-	if a.Label == "" {
-		a.Label = strings.Split(a.Email, "@")[0]
+func (a *Account) lookupIMAP() {
+	parts := strings.Split(a.Email, "@")
+	if len(parts) <= 1 {
+		return
+	}
+	domain := strings.ToLower(strings.TrimSpace(parts[1]))
+	if cfg, ok := IMAP_MAP[domain]; ok {
+		if a.Host == "" { a.Host = cfg[0] }
+		if a.Port == "" { a.Port = cfg[1] }
+	} else {
+		if a.Host == "" { a.Host = "imap." + domain }
+		if a.Port == "" { a.Port = "993" }
 	}
 }
 

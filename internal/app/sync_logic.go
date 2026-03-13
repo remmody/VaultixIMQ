@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -32,16 +33,15 @@ func escapeXML(s string) string {
 	return s
 }
 
-func (c *Core) SyncAccount(acc mail.Account) {
-	if c.WailsCtx != nil {
-		wailsRuntime.EventsEmit(c.WailsCtx, "sync_start", acc.Email)
+func (c *Core) SyncAccount(ctx context.Context, acc mail.Account) {
+	if ctx != nil {
+		wailsRuntime.EventsEmit(ctx, "sync_start", acc.Email)
 	}
 
 	msgs, err := c.FetchInbox(acc.Email, 50)
 	if err != nil {
-		// fmt.Printf("Sync error for %s: %v\n", acc.Email, err)
-		if c.WailsCtx != nil {
-			wailsRuntime.EventsEmit(c.WailsCtx, "sync_error", acc.Email)
+		if ctx != nil {
+			wailsRuntime.EventsEmit(ctx, "sync_error", acc.Email)
 		}
 		return
 	}
@@ -72,7 +72,7 @@ func (c *Core) SyncAccount(acc mail.Account) {
 					// Cleaner title: "Inbox: [Label]"
 					title := fmt.Sprintf("Inbox: %s", acc.Label)
 					body := fmt.Sprintf("%s: %s%s", msg.From, msg.Subject, suffix)
-					c.Notify(title, body)
+					c.Notify(ctx, title, body)
 				}
 			}
 		} else {
@@ -91,8 +91,8 @@ func (c *Core) SyncAccount(acc mail.Account) {
 		}
 	}
 
-	if c.WailsCtx != nil {
-		wailsRuntime.EventsEmit(c.WailsCtx, "sync_complete", acc.Email)
+	if ctx != nil {
+		wailsRuntime.EventsEmit(ctx, "sync_complete", acc.Email)
 	}
 
 	// Phase 31: Sync Deletions
@@ -144,7 +144,7 @@ func (c *Core) SyncAccount(acc mail.Account) {
 	}
 }
 
-func (c *Core) Notify(title, message string) {
+func (c *Core) Notify(ctx context.Context, title, message string) {
 	if c.Settings.Notifications {
 		// OS-specific sanitization
 		var safeTitle, safeMsg string
@@ -167,8 +167,8 @@ func (c *Core) Notify(title, message string) {
 		}
 		
 		// In-app notification
-		if c.WailsCtx != nil {
-			wailsRuntime.EventsEmit(c.WailsCtx, "notification", map[string]interface{}{
+		if ctx != nil {
+			wailsRuntime.EventsEmit(ctx, "notification", map[string]interface{}{
 				"title": title,
 				"msg":   message,
 			})
