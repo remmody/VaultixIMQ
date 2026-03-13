@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -53,7 +52,6 @@ type Core struct {
 	EncryptionKey []byte
 	Mu            sync.Mutex             // For overall state (Cache, Clients map)
 	AccountMus    map[string]*sync.Mutex // For per-account IMAP client access
-	WailsCtx      context.Context
 }
 
 func NewCore(configDir string, encryptionKey []byte) *Core {
@@ -110,7 +108,11 @@ func (c *Core) LoadVault() error {
 		return err
 	}
 
-	// Fix/Update accounts during load
+	c.applyVault(v)
+	return nil
+}
+
+func (c *Core) applyVault(v Vault) {
 	changed := false
 	for i := range v.Accounts {
 		oldHost := v.Accounts[i].Host
@@ -124,42 +126,50 @@ func (c *Core) LoadVault() error {
 	c.Accounts.SetAccounts(v.Accounts)
 	c.TOTP.SetEntries(v.TOTP)
 
-	// Pre-load cache from storage
-	c.Mu.Lock()
-	for _, acc := range v.Accounts {
-		uids, err := c.Storage.ListUIDs(acc.Email)
-		if err == nil && len(uids) > 0 {
-			// Sort descending
-			sort.Slice(uids, func(i, j int) bool { return uids[i] > uids[j] })
-
-			limit := 50
-			if len(uids) < limit {
-				limit = len(uids)
-			}
-
-			msgs := make([]mail.Message, 0, limit)
-			for i := 0; i < limit; i++ {
-				data, err := c.Storage.LoadMail(acc.Email, uids[i])
-				if err == nil {
-					var m mail.Message
-					decrypted, err := c.Crypto.Decrypt(data)
-					if err == nil {
-						if err := json.Unmarshal(decrypted, &m); err == nil {
-							msgs = append(msgs, m)
-						}
-					}
-				}
-			}
-			c.Cache[acc.Email] = msgs
-			// fmt.Printf("Cache loaded: %d messages for %s\n", len(msgs), acc.Email)
-		}
-	}
-	c.Mu.Unlock()
+	c.loadCache(v.Accounts)
 
 	if changed {
 		c.SaveVault()
 	}
-	return nil
+}
+
+func (c *Core) loadCache(accounts []mail.Account) {
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	for _, acc := range accounts {
+		uids, err := c.Storage.ListUIDs(acc.Email)
+		if err != nil || len(uids) == 0 {
+			continue
+		}
+		sort.Slice(uids, func(i, j int) bool { return uids[i] > uids[j] })
+		
+		limit := 50
+		if len(uids) < limit {
+			limit = len(uids)
+		}
+
+		msgs := make([]mail.Message, 0, limit)
+		for i := 0; i < limit; i++ {
+			if m, err := c.loadMessage(acc.Email, uids[i]); err == nil {
+				msgs = append(msgs, m)
+			}
+		}
+		c.Cache[acc.Email] = msgs
+	}
+}
+
+func (c *Core) loadMessage(email string, uid uint32) (mail.Message, error) {
+	data, err := c.Storage.LoadMail(email, uid)
+	if err != nil {
+		return mail.Message{}, err
+	}
+	decrypted, err := c.Crypto.Decrypt(data)
+	if err != nil {
+		return mail.Message{}, err
+	}
+	var m mail.Message
+	err = json.Unmarshal(decrypted, &m)
+	return m, err
 }
 
 func (c *Core) SaveVault() error {
@@ -180,102 +190,102 @@ func (c *Core) SaveVault() error {
 }
 
 func (c *Core) MigrateLegacy() {
-	v := Vault{
-		Settings: c.Settings,
-	}
-	migratedPaths := []string{}
+	v := Vault{Settings: c.Settings}
+	migrated := []string{}
 
-	// Helper to try decrypt then unmarshal
-	tryLoad := func(data []byte, target interface{}) bool {
-		if c.Crypto != nil {
-			if err := c.Crypto.DecryptJSON(data, target); err == nil {
-				return true
-			}
-		}
-		return json.Unmarshal(data, target) == nil
+	migrated = append(migrated, c.migrateAccounts(&v)...)
+	migrated = append(migrated, c.migrateTOTP(&v)...)
+	migrated = append(migrated, c.migrateSettings(&v)...)
+
+	if len(migrated) == 0 {
+		return
 	}
 
-	// 1. Accounts
-	accPaths := []string{
-		filepath.Join(c.ConfigDir, "accounts.vxc"),
-		filepath.Join(c.ConfigDir, "accounts.json"),
-		filepath.Join(c.ConfigDir, "account.json"),
-	}
-	for _, p := range accPaths {
-		if data, err := os.ReadFile(p); err == nil {
-			var accs []mail.Account
-			if tryLoad(data, &accs) {
-				if len(accs) > 0 {
-					for i := range accs {
-						accs[i].Finalize()
-					}
-					v.Accounts = accs
-					migratedPaths = append(migratedPaths, p)
-					break
-				}
-			} else {
-				// Try as single object
-				var single mail.Account
-				if tryLoad(data, &single) && single.Email != "" {
-					single.Finalize()
-					v.Accounts = []mail.Account{single}
-					migratedPaths = append(migratedPaths, p)
-					break
-				}
-			}
-		}
-	}
-
-	// 2. TOTP
-	totpPaths := []string{
-		filepath.Join(c.ConfigDir, "totp.vxc"),
-		filepath.Join(c.ConfigDir, "totp.json"),
-		filepath.Join(c.ConfigDir, "totp_secrets.json"),
-	}
-	for _, p := range totpPaths {
-		if data, err := os.ReadFile(p); err == nil {
-			var entries []totp.Entry
-			if tryLoad(data, &entries) && len(entries) > 0 {
-				v.TOTP = entries
-				migratedPaths = append(migratedPaths, p)
-				break
-			}
-		}
-	}
-
-	// 3. Settings
-	setPaths := []string{
-		filepath.Join(c.ConfigDir, "settings.vxc"),
-		filepath.Join(c.ConfigDir, "settings.json"),
-	}
-	for _, p := range setPaths {
-		if data, err := os.ReadFile(p); err == nil {
-			var s Settings
-			if tryLoad(data, &s) && s.SyncInterval > 0 {
-				v.Settings = s
-				migratedPaths = append(migratedPaths, p)
-				break
-			}
-		}
-	}
-
-	// Apply and Save
 	c.Settings = v.Settings
 	c.Accounts.SetAccounts(v.Accounts)
 	c.TOTP.SetEntries(v.TOTP)
 
 	if err := c.SaveVault(); err == nil {
-		for _, p := range migratedPaths {
-			os.Remove(p)
+		c.cleanupLegacy(migrated)
+	}
+}
+
+func (c *Core) tryLoad(data []byte, target interface{}) bool {
+	if c.Crypto != nil && c.Crypto.DecryptJSON(data, target) == nil {
+		return true
+	}
+	return json.Unmarshal(data, target) == nil
+}
+
+func (c *Core) migrateAccounts(v *Vault) []string {
+	paths := []string{
+		filepath.Join(c.ConfigDir, "accounts.vxc"),
+		filepath.Join(c.ConfigDir, "accounts.json"),
+		filepath.Join(c.ConfigDir, "account.json"),
+	}
+	for _, p := range paths {
+		if data, err := os.ReadFile(p); err == nil {
+			var accs []mail.Account
+			if c.tryLoad(data, &accs) && len(accs) > 0 {
+				for i := range accs { accs[i].Finalize() }
+				v.Accounts = accs
+				return []string{p}
+			}
+			var single mail.Account
+			if c.tryLoad(data, &single) && single.Email != "" {
+				single.Finalize()
+				v.Accounts = []mail.Account{single}
+				return []string{p}
+			}
 		}
-		// Also clean up common variants
-		for _, p := range accPaths {
-			os.Remove(p)
+	}
+	return nil
+}
+
+func (c *Core) migrateTOTP(v *Vault) []string {
+	paths := []string{
+		filepath.Join(c.ConfigDir, "totp.vxc"),
+		filepath.Join(c.ConfigDir, "totp.json"),
+		filepath.Join(c.ConfigDir, "totp_secrets.json"),
+	}
+	for _, p := range paths {
+		if data, err := os.ReadFile(p); err == nil {
+			var entries []totp.Entry
+			if c.tryLoad(data, &entries) && len(entries) > 0 {
+				v.TOTP = entries
+				return []string{p}
+			}
 		}
-		for _, p := range totpPaths {
-			os.Remove(p)
+	}
+	return nil
+}
+
+func (c *Core) migrateSettings(v *Vault) []string {
+	paths := []string{
+		filepath.Join(c.ConfigDir, "settings.vxc"),
+		filepath.Join(c.ConfigDir, "settings.json"),
+	}
+	for _, p := range paths {
+		if data, err := os.ReadFile(p); err == nil {
+			var s Settings
+			if c.tryLoad(data, &s) && s.SyncInterval > 0 {
+				v.Settings = s
+				return []string{p}
+			}
 		}
-		for _, p := range setPaths {
+	}
+	return nil
+}
+
+func (c *Core) cleanupLegacy(migrated []string) {
+	allFiles := [][]string{
+		migrated,
+		{filepath.Join(c.ConfigDir, "accounts.vxc"), filepath.Join(c.ConfigDir, "accounts.json"), filepath.Join(c.ConfigDir, "account.json")},
+		{filepath.Join(c.ConfigDir, "totp.vxc"), filepath.Join(c.ConfigDir, "totp.json"), filepath.Join(c.ConfigDir, "totp_secrets.json")},
+		{filepath.Join(c.ConfigDir, "settings.vxc"), filepath.Join(c.ConfigDir, "settings.json")},
+	}
+	for _, set := range allFiles {
+		for _, p := range set {
 			os.Remove(p)
 		}
 	}

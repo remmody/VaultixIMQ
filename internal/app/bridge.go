@@ -43,7 +43,6 @@ func NewApp() *App {
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
-	a.core.WailsCtx = ctx
 	
 	if a.core.Settings.AutoLogin {
 		a.core.Sync.Start(ctx, a.core.Settings.SyncInterval)
