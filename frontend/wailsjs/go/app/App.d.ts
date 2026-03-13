@@ -18,7 +18,7 @@ export function DeleteTOTP(arg1:string):Promise<void>;
 
 export function ExportProfile(arg1:string,arg2:string):Promise<void>;
 
-export function FetchBody(arg1:string,arg2:number):Promise<Array<unknown>>;
+export function FetchBody(arg1:string,arg2:number):Promise<Array<any>>;
 
 export function FetchInbox(arg1:string,arg2:number):Promise<Array<mail.Message>>;
 
