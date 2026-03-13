@@ -4,9 +4,22 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     rebase-strategy: "auto"
     labels:
       - "dependencies"
+      - "go"
+    reviewers:
+      - "remmody"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
+    labels:
+      - "dependencies"
+      - "javascript"
     reviewers:
       - "remmody"
