@@ -6,16 +6,17 @@ export namespace app {
 	    license: string;
 	    github: string;
 	
-	    static createFrom(source: any = {}) {
+	    static createFrom(source: unknown = {}) {
 	        return new AboutInfo(source);
 	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.version = source["version"];
-	        this.author = source["author"];
-	        this.license = source["license"];
-	        this.github = source["github"];
+	    constructor(source: unknown = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source as string);
+	        const s = source as Record<string, any>;
+	        this.version = s["version"];
+	        this.author = s["author"];
+	        this.license = s["license"];
+	        this.github = s["github"];
 	    }
 	}
 	export class Settings {
@@ -28,20 +29,21 @@ export namespace app {
 	    auto_lock_interval?: number;
 	    app_password_setup_done: boolean;
 	
-	    static createFrom(source: any = {}) {
+	    static createFrom(source: unknown = {}) {
 	        return new Settings(source);
 	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.sync_interval = source["sync_interval"];
-	        this.auto_login = source["auto_login"];
-	        this.notifications = source["notifications"];
-	        this.sound = source["sound"];
-	        this.app_password_hash = source["app_password_hash"];
-	        this.app_password_salt = source["app_password_salt"];
-	        this.auto_lock_interval = source["auto_lock_interval"];
-	        this.app_password_setup_done = source["app_password_setup_done"];
+	    constructor(source: unknown = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source as string);
+	        const s = source as Record<string, any>;
+	        this.sync_interval = s["sync_interval"];
+	        this.auto_login = s["auto_login"];
+	        this.notifications = s["notifications"];
+	        this.sound = s["sound"];
+	        this.app_password_hash = s["app_password_hash"];
+	        this.app_password_salt = s["app_password_salt"];
+	        this.auto_lock_interval = s["auto_lock_interval"];
+	        this.app_password_setup_done = s["app_password_setup_done"];
 	    }
 	}
 	export class UpdateInfo {
@@ -51,17 +53,18 @@ export namespace app {
 	    release_notes: string;
 	    download_url: string;
 	
-	    static createFrom(source: any = {}) {
+	    static createFrom(source: unknown = {}) {
 	        return new UpdateInfo(source);
 	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.has_update = source["has_update"];
-	        this.latest_version = source["latest_version"];
-	        this.current_version = source["current_version"];
-	        this.release_notes = source["release_notes"];
-	        this.download_url = source["download_url"];
+	    constructor(source: unknown = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source as string);
+	        const s = source as Record<string, any>;
+	        this.has_update = s["has_update"];
+	        this.latest_version = s["latest_version"];
+	        this.current_version = s["current_version"];
+	        this.release_notes = s["release_notes"];
+	        this.download_url = s["download_url"];
 	    }
 	}
 
@@ -79,20 +82,21 @@ export namespace mail {
 	    label: string;
 	    unread_count: number;
 	
-	    static createFrom(source: any = {}) {
+	    static createFrom(source: unknown = {}) {
 	        return new Account(source);
 	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.email = source["email"];
-	        this.password = source["password"];
-	        this.imap_host = source["imap_host"];
-	        this.imap_port = source["imap_port"];
-	        this.host = source["host"];
-	        this.port = source["port"];
-	        this.label = source["label"];
-	        this.unread_count = source["unread_count"];
+	    constructor(source: unknown = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source as string);
+	        const s = source as Record<string, any>;
+	        this.email = s["email"];
+	        this.password = s["password"];
+	        this.imap_host = s["imap_host"];
+	        this.imap_port = s["imap_port"];
+	        this.host = s["host"];
+	        this.port = s["port"];
+	        this.label = s["label"];
+	        this.unread_count = s["unread_count"];
 	    }
 	}
 	export class Message {
@@ -104,19 +108,20 @@ export namespace mail {
 	    seen: boolean;
 	    codes: string[];
 	
-	    static createFrom(source: any = {}) {
+	    static createFrom(source: unknown = {}) {
 	        return new Message(source);
 	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.uid = source["uid"];
-	        this.subject = source["subject"];
-	        this.from = source["from"];
-	        this.date = source["date"];
-	        this.body = source["body"];
-	        this.seen = source["seen"];
-	        this.codes = source["codes"];
+	    constructor(source: unknown = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source as string);
+	        const s = source as Record<string, any>;
+	        this.uid = s["uid"];
+	        this.subject = s["subject"];
+	        this.from = s["from"];
+	        this.date = s["date"];
+	        this.body = s["body"];
+	        this.seen = s["seen"];
+	        this.codes = s["codes"];
 	    }
 	}
 
@@ -129,29 +134,31 @@ export namespace totp {
 	    issuer: string;
 	    secret: string;
 	
-	    static createFrom(source: any = {}) {
+	    static createFrom(source: unknown = {}) {
 	        return new Entry(source);
 	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.account_name = source["account_name"];
-	        this.issuer = source["issuer"];
-	        this.secret = source["secret"];
+	    constructor(source: unknown = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source as string);
+	        const s = source as Record<string, any>;
+	        this.account_name = s["account_name"];
+	        this.issuer = s["issuer"];
+	        this.secret = s["secret"];
 	    }
 	}
 	export class Response {
 	    code: string;
 	    timeLeft: number;
 	
-	    static createFrom(source: any = {}) {
+	    static createFrom(source: unknown = {}) {
 	        return new Response(source);
 	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.code = source["code"];
-	        this.timeLeft = source["timeLeft"];
+	    constructor(source: unknown = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source as string);
+	        const s = source as Record<string, any>;
+	        this.code = s["code"];
+	        this.timeLeft = s["timeLeft"];
 	    }
 	}
 
