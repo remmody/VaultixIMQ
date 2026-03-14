@@ -35,18 +35,18 @@ export interface EnvironmentInfo {
 // [EventsEmit](https://wails.io/docs/reference/runtime/events#eventsemit)
 // emits the given event. Optional data may be passed with the event.
 // This will trigger any event listeners.
-export function EventsEmit(eventName: string, ...data: unknown[]): void;
+export function EventsEmit(eventName: string, ...data: any): void;
 
 // [EventsOn](https://wails.io/docs/reference/runtime/events#eventson) sets up a listener for the given event name.
-export function EventsOn(eventName: string, callback: (...data: unknown[]) => void): () => void;
+export function EventsOn(eventName: string, callback: (...data: any) => void): () => void;
 
 // [EventsOnMultiple](https://wails.io/docs/reference/runtime/events#eventsonmultiple)
 // sets up a listener for the given event name, but will only trigger a given number times.
-export function EventsOnMultiple(eventName: string, callback: (...data: unknown[]) => void, maxCallbacks: number): () => void;
+export function EventsOnMultiple(eventName: string, callback: (...data: any) => void, maxCallbacks: number): () => void;
 
 // [EventsOnce](https://wails.io/docs/reference/runtime/events#eventsonce)
 // sets up a listener for the given event name, but will only trigger once.
-export function EventsOnce(eventName: string, callback: (...data: unknown[]) => void): () => void;
+export function EventsOnce(eventName: string, callback: (...data: any) => void): () => void;
 
 // [EventsOff](https://wails.io/docs/reference/runtime/events#eventsoff)
 // unregisters the listener for the given event name.

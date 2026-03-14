@@ -94,6 +94,10 @@ document.addEventListener('alpine:init', () => {
         nextSyncSecs: 0,
         notificationSound: new Audio('/notifications.wav'),
 
+        openURL(url) {
+            if (url) runtime.BrowserOpenURL(url);
+        },
+
         async init() {
             try {
                 await this.loadSettings();
