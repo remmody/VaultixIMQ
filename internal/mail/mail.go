@@ -27,6 +27,14 @@ type Account struct {
 	UnreadCount int    `json:"unread_count"`
 }
 
+// Pre-compiled regexes to avoid recompilation on every call.
+var (
+	reStyle  = regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
+	reScript = regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
+	reTags   = regexp.MustCompile(`<[^>]*>`)
+	reCodes  = regexp.MustCompile(`\b\d{6}\b`)
+)
+
 var IMAP_MAP = map[string][2]string{
 	"gmail.com":      {"imap.gmail.com", "993"},
 	"googlemail.com": {"imap.gmail.com", "993"},
@@ -88,11 +96,8 @@ func (a *Account) lookupIMAP() {
 }
 
 func StripHTML(s string) string {
-	reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
 	s = reStyle.ReplaceAllString(s, "")
-	reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
 	s = reScript.ReplaceAllString(s, "")
-	reTags := regexp.MustCompile("<[^>]*>")
 	s = reTags.ReplaceAllString(s, "")
 	s = strings.ReplaceAll(s, "&nbsp;", " ")
 	s = strings.ReplaceAll(s, "&zwnj;", "")
@@ -101,8 +106,7 @@ func StripHTML(s string) string {
 }
 
 func ExtractCodes(s string) []string {
-	re := regexp.MustCompile(`\b\d{6}\b`)
-	matches := re.FindAllString(s, -1)
+	matches := reCodes.FindAllString(s, -1)
 	unique := make(map[string]bool)
 	var res []string
 	for _, m := range matches {

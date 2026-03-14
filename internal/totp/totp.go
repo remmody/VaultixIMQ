@@ -83,17 +83,9 @@ func (m *Manager) Get(accountName string) (Response, error) {
 		return Response{}, os.ErrNotExist
 	}
 
-	code, err := totp.GenerateCode(secret, time.Now())
-	if err != nil {
-		return Response{}, err
-	}
-
-	timeLeft := 30 - (time.Now().Unix() % 30)
-	return Response{
-		Code:     code,
-		TimeLeft: int(timeLeft),
-	}, nil
+	return m.Generate(secret)
 }
+
 func (m *Manager) Generate(secret string) (Response, error) {
 	code, err := totp.GenerateCode(secret, time.Now())
 	if err != nil {

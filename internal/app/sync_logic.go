@@ -14,17 +14,7 @@ import (
 )
 
 func escapeXML(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r < 32 {
-			if r == '\t' || r == '\n' || r == '\r' {
-				b.WriteRune(r)
-			}
-		} else {
-			b.WriteRune(r)
-		}
-	}
-	s = b.String()
+	s = stripControlChars(s)
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	s = strings.ReplaceAll(s, ">", "&gt;")

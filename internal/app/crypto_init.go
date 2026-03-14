@@ -1,13 +1,13 @@
 package app
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"os"
 	"path/filepath"
 	"runtime"
 	"fmt"
 
+	"github.com/remmody/VaultixIMQ/internal/crypto"
 	"github.com/zalando/go-keyring"
 )
 
@@ -46,7 +46,7 @@ func (c *Core) InitEncryption() {
 	}
 
 	// 4. Final Step: Start from scratch
-	newKey, keyStr := GenerateKey()
+	newKey, keyStr := crypto.GenerateKey()
 	c.EncryptionKey = newKey
 	c.SetSecureKey(keyStr)
 }
@@ -88,8 +88,3 @@ func (c *Core) SetSecureKey(key string) error {
 	return err
 }
 
-func GenerateKey() ([]byte, string) {
-	newKey := make([]byte, 32)
-	rand.Read(newKey)
-	return newKey, base64.StdEncoding.EncodeToString(newKey)
-}
