@@ -59,6 +59,13 @@ document.addEventListener('alpine:init', () => {
         showAbout: false,
         showBulkAdd: false,
         accountSearch: '',
+        totpTimers: {},
+        
+        // Virtual Scrolling State
+        accountScrollTop: 0,
+        accountViewportHeight: 600,
+        accountItemHeight: 60,
+        accountBuffer: 10,
 
         isLocked: false,
         showPasswordSetup: false,
@@ -111,6 +118,7 @@ document.addEventListener('alpine:init', () => {
                 if (!this.isLocked) {
                     await this.loadAccounts();
                     await this.loadTOTPs();
+                    await this.sanitizeTOTPs();
                 }
 
                 // Load initial about info
@@ -140,12 +148,6 @@ document.addEventListener('alpine:init', () => {
             // Update check timer
             this.checkForUpdates();
             setInterval(() => this.checkForUpdates(), 3600000);
-
-            setInterval(async () => {
-                if (!this.isLocked) {
-                    await this.updateTOTPs();
-                }
-            }, 1000);
 
             setInterval(async () => {
                 this.nextSyncSecs = await GetNextSync();
@@ -210,24 +212,79 @@ document.addEventListener('alpine:init', () => {
 
         async loadTOTPs() {
             try {
+                this.stopAllTOTPTimers();
                 this.totpList = (await GetTOTPList()) || [];
-                await this.updateTOTPs();
+                
+                // Initialize timers for each entry
+                this.totpList.forEach(t => {
+                    this.startTOTPTimer(t.account_name, t.secret);
+                });
             } catch (e) {
                 console.error("Load TOTPs error:", e);
                 this.totpList = [];
             }
         },
 
-        async updateTOTPs() {
-            try {
-                const results = await Promise.all(this.totpList.map(t => GenerateTOTP(t.secret)));
-                results.forEach((res, i) => {
-                    this.totpList[i].code = res.code;
-                    if (i === 0) this.timeLeft = res.timeLeft;
-                });
-            } catch (e) {
-                console.error("TOTP update error:", e);
+        async sanitizeTOTPs() {
+            console.log("[TOTP] Starting sanitization...");
+            const brokenLabels = [];
+            for (const t of this.totpList) {
+                try {
+                    await GenerateTOTP(t.secret);
+                } catch (e) {
+                    console.warn(`[TOTP Sanitization] Purging broken secret for ${t.account_name}:`, e);
+                    brokenLabels.push(t.account_name);
+                }
             }
+
+            for (const label of brokenLabels) {
+                this.stopTOTPTimer(label);
+                await DeleteTOTP(label);
+            }
+
+            if (brokenLabels.length > 0) {
+                await this.loadTOTPs();
+                this.showToast(`Purged ${brokenLabels.length} corrupted TOTP entries`);
+            }
+        },
+
+        startTOTPTimer(label, secret) {
+            this.stopTOTPTimer(label); // Safety first
+            
+            const updateFunc = async () => {
+                if (this.isLocked) return;
+                try {
+                    const res = await GenerateTOTP(secret);
+                    const idx = this.totpList.findIndex(t => t.account_name === label);
+                    if (idx !== -1) {
+                        this.totpList[idx].code = res.code;
+                        if (idx === 0) this.timeLeft = res.timeLeft;
+                    }
+                } catch (e) {
+                    console.error(`[TOTP Zombie Fix] Stopping timer for ${label} due to error:`, e);
+                    this.stopTOTPTimer(label);
+                    const idx = this.totpList.findIndex(t => t.account_name === label);
+                    if (idx !== -1) this.totpList[idx].code = "INVALID";
+                }
+            };
+
+            updateFunc(); // Run once immediately
+            this.totpTimers[label] = setInterval(updateFunc, 1000);
+        },
+
+        stopTOTPTimer(label) {
+            if (this.totpTimers[label]) {
+                clearInterval(this.totpTimers[label]);
+                delete this.totpTimers[label];
+            }
+        },
+
+        stopAllTOTPTimers() {
+            Object.keys(this.totpTimers).forEach(label => this.stopTOTPTimer(label));
+        },
+
+        async updateTOTPs() {
+            // Deprecated: Now using per-label timers for better lifecycle management
         },
 
         async selectAccount(acc) {
@@ -351,11 +408,12 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
             try {
+                // Bridge expects AddTOTP(accountName, secret, issuer, account)
                 await AddTOTP(
                     this.newTotp.label,
                     this.newTotp.secret.toUpperCase().replace(/\s/g, ''),
-                    this.newTotp.issuer,
-                    this.newTotp.account
+                    this.newTotp.issuer || '',
+                    this.newTotp.account || ''
                 );
                 await this.loadTOTPs();
                 this.showAddTOTP = false;
@@ -363,14 +421,36 @@ document.addEventListener('alpine:init', () => {
                 this.showToast("TOTP added");
             } catch (e) {
                 this.showToast("Error adding TOTP");
+                console.error("AddTOTP Error:", e);
             }
         },
 
         async deleteTOTP(label) {
-            if (await this.askConfirm("Delete TOTP", `Are you sure you want to delete the TOTP secret for ${label}?`)) {
-                await DeleteTOTP(label);
+            // UNCONDITIONAL FORCE DELETION
+            if (await this.askConfirm("Delete TOTP", `Are you sure? This will PERMANENTLY remove the secret for ${label}.`)) {
+                try {
+                    this.stopTOTPTimer(label);
+                    // Force UI update even if backend fails
+                    this.totpList = this.totpList.filter(t => t.account_name !== label);
+                    await DeleteTOTP(label);
+                    await this.loadTOTPs();
+                    this.showToast("TOTP deleted");
+                } catch (e) {
+                    console.error("Force Delete Error (ignoring):", e);
+                    this.showToast("TOTP removed from view");
+                    await this.loadTOTPs();
+                }
+            }
+        },
+
+        async confirmRemove2FA(email) {
+            const t = this.getLinkedTOTP(email);
+            if (!t) return;
+            if (await this.askConfirm("Remove 2FA", `Are you sure you want to remove 2FA protection from account ${email}?`)) {
+                this.stopTOTPTimer(t.account_name);
+                await DeleteTOTP(t.account_name);
                 await this.loadTOTPs();
-                this.showToast("TOTP deleted");
+                this.showToast("2FA removed from account");
             }
         },
 
@@ -410,8 +490,30 @@ document.addEventListener('alpine:init', () => {
                 const q = this.accountSearch.toLowerCase();
                 list = list.filter(a => a.email.toLowerCase().includes(q) || (a.label && a.label.toLowerCase().includes(q)));
             }
-            // Sort by last_message_time (descending)
             return list.sort((a, b) => (b.last_message_time || 0) - (a.last_message_time || 0));
+        },
+
+        get visibleAccounts() {
+            const list = this.filteredAccounts();
+            const startVisible = Math.floor(this.accountScrollTop / this.accountItemHeight);
+            const endVisible = Math.ceil((this.accountScrollTop + this.accountViewportHeight) / this.accountItemHeight);
+            
+            const start = Math.max(0, startVisible - this.accountBuffer);
+            const end = Math.min(list.length, endVisible + this.accountBuffer);
+            
+            return list.slice(start, end).map((acc, index) => ({
+                ...acc,
+                virtualTop: (start + index) * this.accountItemHeight
+            }));
+        },
+
+        get accountsTotalHeight() {
+            return this.filteredAccounts().length * this.accountItemHeight;
+        },
+
+        handleAccountScroll(e) {
+            this.accountScrollTop = e.target.scrollTop;
+            this.accountViewportHeight = e.target.offsetHeight;
         },
 
         async askConfirm(title, message) {

@@ -6,7 +6,7 @@ import {totp} from '../models';
 
 export function AddAccount(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<boolean>;
 
-export function AddTOTP(arg1:string,arg2:string,arg3:string):Promise<void>;
+export function AddTOTP(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function BulkAddAccounts(arg1:string,arg2:string):Promise<number>;
 

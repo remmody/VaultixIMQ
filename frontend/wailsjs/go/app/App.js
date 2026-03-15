@@ -6,8 +6,8 @@ export function AddAccount(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['AddAccount'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function AddTOTP(arg1, arg2, arg3) {
-  return window['go']['app']['App']['AddTOTP'](arg1, arg2, arg3);
+export function AddTOTP(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['AddTOTP'](arg1, arg2, arg3, arg4);
 }
 
 export function BulkAddAccounts(arg1, arg2) {

@@ -213,11 +213,12 @@ func (a *App) GenerateTOTP(secret string) (totp.Response, error) {
 	return a.core.TOTP.Generate(secret)
 }
 
-func (a *App) AddTOTP(accountName, issuer, secret string) {
+func (a *App) AddTOTP(accountName, secret, issuer, account string) {
 	a.core.TOTP.Add(totp.Entry{
 		AccountName: accountName,
 		Issuer:      issuer,
 		Secret:      secret,
+		LinkedAccount: account,
 	})
 	a.core.SaveVault()
 }

@@ -1,7 +1,9 @@
 package totp
 
 import (
+	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +15,7 @@ type Entry struct {
 	AccountName string `json:"account_name"`
 	Issuer      string `json:"issuer"`
 	Secret      string `json:"secret"`
+	LinkedAccount string `json:"account"` // Added to link with mail account
 }
 
 type Response struct {
@@ -87,8 +90,12 @@ func (m *Manager) Get(accountName string) (Response, error) {
 }
 
 func (m *Manager) Generate(secret string) (Response, error) {
-	code, err := totp.GenerateCode(secret, time.Now())
+	// Robust normalization
+	normalizedSecret := normalizeBase32(secret)
+	
+	code, err := totp.GenerateCode(normalizedSecret, time.Now())
 	if err != nil {
+		log.Printf("[TOTP Error] Failed to generate code for secret [%s] (normalized: [%s]): %v", secret, normalizedSecret, err)
 		return Response{}, err
 	}
 
@@ -97,4 +104,44 @@ func (m *Manager) Generate(secret string) (Response, error) {
 		Code:     code,
 		TimeLeft: int(timeLeft),
 	}, nil
+}
+
+func normalizeBase32(secret string) string {
+	// 1. Strip whitespace, dashes, and common delimiters
+	s := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '-' || r == '_' || r == '\t' || r == '\n' || r == '\r' {
+			return -1
+		}
+		return r
+	}, secret)
+
+	// 2. Convert to uppercase
+	s = strings.ToUpper(s)
+
+	// 3. Fix common typos
+	// Standard Base32: A-Z, 2-7
+	replacer := strings.NewReplacer(
+		"0", "O",
+		"1", "I", 
+		"8", "B",
+	)
+	s = replacer.Replace(s)
+
+	// 4. Strip any remaining invalid characters
+	validBase32 := "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	var sb strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune(validBase32, r) {
+			sb.WriteRune(r)
+		}
+	}
+	s = sb.String()
+
+	// 5. Add padding if missing
+	if len(s) > 0 && len(s)%8 != 0 {
+		padding := 8 - (len(s) % 8)
+		s += strings.Repeat("=", padding)
+	}
+
+	return s
 }

@@ -134,6 +134,7 @@ export namespace totp {
 	    account_name: string;
 	    issuer: string;
 	    secret: string;
+	    account: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Entry(source);
@@ -144,6 +145,7 @@ export namespace totp {
 	        this.account_name = source["account_name"];
 	        this.issuer = source["issuer"];
 	        this.secret = source["secret"];
+	        this.account = source["account"];
 	    }
 	}
 	export class Response {
