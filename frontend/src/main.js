@@ -57,6 +57,8 @@ document.addEventListener('alpine:init', () => {
         showImportModal: false,
         showSettings: false,
         showAbout: false,
+        showBulkAdd: false,
+        accountSearch: '',
 
         isLocked: false,
         showPasswordSetup: false,
@@ -70,7 +72,8 @@ document.addEventListener('alpine:init', () => {
         importPath: '',
         newAcc: { email: '', password: '', host: '', port: '', label: '' },
         newTotp: { label: '', secret: '', issuer: '', account: '' },
-        toast: { show: false, msg: '' },
+        toast: { show: false, msg: '', title: '', email: '' },
+        dialog: { show: false, title: '', message: '', type: 'alert', resolve: null },
 
         aboutInfo: {
             version: '1.0.0',
@@ -92,6 +95,7 @@ document.addEventListener('alpine:init', () => {
             auto_lock_interval: 5
         },
         nextSyncSecs: 0,
+        bulkImapServer: '',
         notificationSound: new Audio('/notifications.wav'),
 
         openURL(url) {
@@ -163,7 +167,7 @@ document.addEventListener('alpine:init', () => {
             });
 
             runtime.EventsOn("notification", (data) => {
-                this.showToast(data.msg, data.title);
+                this.showToast(data.msg, data.title, data.email);
                 if (this.settings.sound) {
                     this.notificationSound.currentTime = 0;
                     this.notificationSound.play().catch(e => console.error("Sound play error:", e));
@@ -330,7 +334,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteAccount(email) {
-            if (confirm(`Delete account ${email}?`)) {
+            if (await this.askConfirm("Delete Account", `Are you sure you want to delete account ${email}?`)) {
                 await DeleteAccount(email);
                 await this.loadAccounts();
                 if (this.selectedAccount?.email === email) {
@@ -363,7 +367,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteTOTP(label) {
-            if (confirm(`Delete TOTP secret for ${label}?`)) {
+            if (await this.askConfirm("Delete TOTP", `Are you sure you want to delete the TOTP secret for ${label}?`)) {
                 await DeleteTOTP(label);
                 await this.loadTOTPs();
                 this.showToast("TOTP deleted");
@@ -381,12 +385,53 @@ document.addEventListener('alpine:init', () => {
             if (success) this.showToast(`Copied ${text}`);
         },
 
-        showToast(msg, title = "System") {
+        showToast(msg, title = "System", email = "") {
             this.toast.msg = msg;
             this.toast.title = title;
+            this.toast.email = email;
             this.toast.show = true;
             if (this.toastTimeout) clearTimeout(this.toastTimeout);
             this.toastTimeout = setTimeout(() => { this.toast.show = false; }, 5000);
+        },
+
+        handleNotificationClick(email) {
+            if (!email) return;
+            const acc = this.accounts.find(a => a.email === email);
+            if (acc) {
+                this.selectAccount(acc);
+                this.sidebarMode = 'accounts';
+                this.toast.show = false;
+            }
+        },
+
+        filteredAccounts() {
+            let list = [...this.accounts];
+            if (this.accountSearch) {
+                const q = this.accountSearch.toLowerCase();
+                list = list.filter(a => a.email.toLowerCase().includes(q) || (a.label && a.label.toLowerCase().includes(q)));
+            }
+            // Sort by last_message_time (descending)
+            return list.sort((a, b) => (b.last_message_time || 0) - (a.last_message_time || 0));
+        },
+
+        async askConfirm(title, message) {
+            this.dialog = { show: true, title, message, type: 'confirm', resolve: null };
+            return new Promise(resolve => {
+                this.dialog.resolve = resolve;
+            });
+        },
+
+        async showAlert(title, message) {
+            this.dialog = { show: true, title, message, type: 'alert', resolve: null };
+            return new Promise(resolve => {
+                this.dialog.resolve = resolve;
+            });
+        },
+
+        handleDialog(value) {
+            const resolve = this.dialog.resolve;
+            this.dialog.show = false;
+            if (resolve) resolve(value);
         },
 
         getLinkedTOTP(email) {
@@ -447,6 +492,29 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async submitBulkImport() {
+            if (!this.bulkImapServer) {
+                this.showToast("Please enter an IMAP server");
+                return;
+            }
+            try {
+                const { SelectBulkImportPath, BulkAddAccounts } = globalThis.go.app.App;
+                const path = await SelectBulkImportPath();
+                if (!path) return;
+
+                const count = await BulkAddAccounts(path, this.bulkImapServer);
+                if (count > 0) {
+                    this.showToast(`Successfully imported ${count} accounts`);
+                    await this.loadAccounts();
+                    this.showBulkAdd = false;
+                } else {
+                    this.showToast("No accounts were imported. Check file format.");
+                }
+            } catch (e) {
+                this.showToast("Bulk import failed: " + e);
+            }
+        },
+
         get timerClass() {
             if (this.timeLeft > 15) return 'text-green-400';
             if (this.timeLeft > 7) return 'text-yellow-400';
@@ -470,7 +538,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async skipSetupPassword() {
-            if (confirm("Are you sure? Your data will be stored without app-level password protection.")) {
+            if (await this.askConfirm("Skip Protection", "Are you sure? Your data will be stored without app-level password protection.")) {
                 await SkipAppPasswordSetup();
                 this.showPasswordSetup = false;
                 this.showToast("Password protection skipped");

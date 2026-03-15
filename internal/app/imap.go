@@ -97,11 +97,12 @@ func (c *Core) FetchInbox(emailAddress string, limit int) ([]mail.Message, error
 		}
 
 		mails = append(mails, mail.Message{
-			UID:     msg.Uid,
-			Subject: c.DecodeHeader(msg.Envelope.Subject),
-			From:    c.DecodeHeader(fromStr),
-			Date:    dateStr,
-			Seen:    seen,
+			UID:      msg.Uid,
+			Subject:  c.DecodeHeader(msg.Envelope.Subject),
+			From:     c.DecodeHeader(fromStr),
+			Date:     dateStr,
+			DateUnix: msg.Envelope.Date.Unix(),
+			Seen:     seen,
 		})
 	}
 

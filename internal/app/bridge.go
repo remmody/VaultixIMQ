@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/remmody/VaultixIMQ/internal/mail"
@@ -129,6 +131,52 @@ func (a *App) DeleteAccount(email string) {
 	a.core.SaveVault()
 }
 
+func (a *App) BulkAddAccounts(filePath string, imapServer string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	host := imapServer
+	port := "993"
+	if strings.Contains(imapServer, ":") {
+		parts := strings.Split(imapServer, ":")
+		host = parts[0]
+		port = parts[1]
+	}
+
+	count := 0
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || !strings.Contains(line, ":") {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		acc := mail.Account{
+			Email:    parts[0],
+			Password: parts[1],
+			Host:     host,
+			Port:     port,
+		}
+		if a.core.Accounts.Add(acc) {
+			count++
+		}
+	}
+
+	if count > 0 {
+		a.core.SaveVault()
+	}
+
+	return count, scanner.Err()
+}
+
 func (a *App) GetCachedMessages(email string) []mail.Message {
 	a.core.Mu.Lock()
 	defer a.core.Mu.Unlock()
@@ -218,6 +266,16 @@ func (a *App) SelectOpenPath() (string, error) {
 		Title: "Open Profile Backup",
 		Filters: []runtime.FileFilter{
 			{DisplayName: "Vaultix Backup (*.vaultix)", Pattern: "*.vaultix"},
+		},
+	})
+}
+
+func (a *App) SelectBulkImportPath() (string, error) {
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Account List (.txt)",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Text Files (*.txt)", Pattern: "*.txt"},
+			{DisplayName: "All Files (*.*)", Pattern: "*.*"},
 		},
 	})
 }

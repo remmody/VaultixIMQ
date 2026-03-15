@@ -8,6 +8,8 @@ export function AddAccount(arg1:string,arg2:string,arg3:string,arg4:string,arg5:
 
 export function AddTOTP(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function BulkAddAccounts(arg1:string,arg2:string):Promise<number>;
+
 export function CheckForUpdates():Promise<app.UpdateInfo>;
 
 export function CopyToClipboard(arg1:string):Promise<boolean>;
@@ -49,6 +51,8 @@ export function MarkAllAsRead(arg1:string):Promise<void>;
 export function MarkAsRead(arg1:string,arg2:number):Promise<void>;
 
 export function NeedsSetup():Promise<boolean>;
+
+export function SelectBulkImportPath():Promise<string>;
 
 export function SelectOpenPath():Promise<string>;
 

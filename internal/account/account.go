@@ -76,3 +76,16 @@ func (m *Manager) Find(email string) (mail.Account, bool) {
 	}
 	return mail.Account{}, false
 }
+
+func (m *Manager) UpdateLastMessageTime(email string, timestamp int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.accounts {
+		if m.accounts[i].Email == email {
+			if timestamp > m.accounts[i].LastMessageTime {
+				m.accounts[i].LastMessageTime = timestamp
+			}
+			return
+		}
+	}
+}

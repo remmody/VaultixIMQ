@@ -10,6 +10,10 @@ export function AddTOTP(arg1, arg2, arg3) {
   return window['go']['app']['App']['AddTOTP'](arg1, arg2, arg3);
 }
 
+export function BulkAddAccounts(arg1, arg2) {
+  return window['go']['app']['App']['BulkAddAccounts'](arg1, arg2);
+}
+
 export function CheckForUpdates() {
   return window['go']['app']['App']['CheckForUpdates']();
 }
@@ -92,6 +96,10 @@ export function MarkAsRead(arg1, arg2) {
 
 export function NeedsSetup() {
   return window['go']['app']['App']['NeedsSetup']();
+}
+
+export function SelectBulkImportPath() {
+  return window['go']['app']['App']['SelectBulkImportPath']();
 }
 
 export function SelectOpenPath() {

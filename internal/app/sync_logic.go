@@ -53,8 +53,11 @@ func (c *Core) SyncAccount(ctx context.Context, acc mail.Account) {
 			}
 
 			if newCount > 0 {
+				msg := msgs[0]
+				// Update last message time for sorting
+				c.Accounts.UpdateLastMessageTime(acc.Email, msg.DateUnix)
+
 				if c.Settings.Notifications {
-					msg := msgs[0]
 					suffix := ""
 					if newCount > 1 {
 						suffix = fmt.Sprintf(" (+%d more)", newCount-1)
@@ -62,7 +65,7 @@ func (c *Core) SyncAccount(ctx context.Context, acc mail.Account) {
 					// Cleaner title: "Inbox: [Label]"
 					title := fmt.Sprintf("Inbox: %s", acc.Label)
 					body := fmt.Sprintf("%s: %s%s", msg.From, msg.Subject, suffix)
-					c.Notify(ctx, title, body)
+					c.NotifyWithEmail(ctx, title, body, acc.Email)
 				}
 			}
 		} else {
@@ -135,6 +138,10 @@ func (c *Core) SyncAccount(ctx context.Context, acc mail.Account) {
 }
 
 func (c *Core) Notify(ctx context.Context, title, message string) {
+	c.NotifyWithEmail(ctx, title, message, "")
+}
+
+func (c *Core) NotifyWithEmail(ctx context.Context, title, message string, email string) {
 	if c.Settings.Notifications {
 		// OS-specific sanitization
 		var safeTitle, safeMsg string
@@ -146,21 +153,19 @@ func (c *Core) Notify(ctx context.Context, title, message string) {
 			safeTitle = stripControlChars(title)
 			safeMsg = stripControlChars(message)
 		}
-		
+
 		// System notification
 		err := beeep.Notify(safeTitle, safeMsg, "")
 		if err != nil {
 			// fmt.Printf("System Notification error: %v\n", err)
-			// fmt.Printf("GOOS: %s\n", runtime.GOOS)
-			// fmt.Printf("Attempted Title: [%s]\n", safeTitle)
-			// fmt.Printf("Attempted Msg: [%s]\n", safeMsg)
 		}
-		
+
 		// In-app notification
 		if ctx != nil {
 			wailsRuntime.EventsEmit(ctx, "notification", map[string]interface{}{
 				"title": title,
 				"msg":   message,
+				"email": email,
 			})
 		}
 	}

@@ -75,9 +75,11 @@ export namespace mail {
 	    imap_host: string;
 	    imap_port: string;
 	    host?: string;
-	    port?: string;
+	    port: string;
 	    label: string;
+	    status: string;
 	    unread_count: number;
+	    last_message_time: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Account(source);
@@ -92,7 +94,9 @@ export namespace mail {
 	        this.host = source["host"];
 	        this.port = source["port"];
 	        this.label = source["label"];
+	        this.status = source["status"];
 	        this.unread_count = source["unread_count"];
+	        this.last_message_time = source["last_message_time"];
 	    }
 	}
 	export class Message {
@@ -100,6 +104,7 @@ export namespace mail {
 	    subject: string;
 	    from: string;
 	    date: string;
+	    date_unix: number;
 	    body: string;
 	    seen: boolean;
 	    codes: string[];
@@ -114,6 +119,7 @@ export namespace mail {
 	        this.subject = source["subject"];
 	        this.from = source["from"];
 	        this.date = source["date"];
+	        this.date_unix = source["date_unix"];
 	        this.body = source["body"];
 	        this.seen = source["seen"];
 	        this.codes = source["codes"];

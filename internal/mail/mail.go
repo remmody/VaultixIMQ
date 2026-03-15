@@ -10,6 +10,7 @@ type Message struct {
 	Subject string   `json:"subject"`
 	From    string   `json:"from"`
 	Date    string   `json:"date"`
+	DateUnix int64   `json:"date_unix"`
 	Body    string   `json:"body"`
 	Seen    bool     `json:"seen"`
 	Codes   []string `json:"codes"`
@@ -22,9 +23,11 @@ type Account struct {
 	Port     string `json:"imap_port"`
 	// Legacy fields for migration
 	OldHost string `json:"host,omitempty"`
-	OldPort     string `json:"port,omitempty"`
-	Label       string `json:"label"`
-	UnreadCount int    `json:"unread_count"`
+	OldPort string `json:"port"`
+	Label string `json:"label"`
+	Status string `json:"status"`
+	UnreadCount int `json:"unread_count"`
+	LastMessageTime int64 `json:"last_message_time"`
 }
 
 // Pre-compiled regexes to avoid recompilation on every call.
@@ -33,6 +36,7 @@ var (
 	reScript = regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
 	reTags   = regexp.MustCompile(`<[^>]*>`)
 	reCodes  = regexp.MustCompile(`\b\d{6}\b`)
+	reCodesDash = regexp.MustCompile(`\b[A-Za-z0-9]{3}-[A-Za-z0-9]{3}-[A-Za-z0-9]{4}\b`)
 )
 
 var IMAP_MAP = map[string][2]string{
@@ -106,7 +110,10 @@ func StripHTML(s string) string {
 }
 
 func ExtractCodes(s string) []string {
-	matches := reCodes.FindAllString(s, -1)
+	var matches []string
+	matches = append(matches, reCodes.FindAllString(s, -1)...)
+	matches = append(matches, reCodesDash.FindAllString(s, -1)...)
+
 	unique := make(map[string]bool)
 	var res []string
 	for _, m := range matches {
