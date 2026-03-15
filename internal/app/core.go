@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"github.com/remmody/VaultixIMQ/internal/storage"
 	"github.com/remmody/VaultixIMQ/internal/syncmgr"
 	"github.com/remmody/VaultixIMQ/internal/totp"
+	"time"
 
 	"github.com/emersion/go-imap/client"
 )
@@ -52,6 +54,7 @@ type Core struct {
 	EncryptionKey []byte
 	Mu            sync.Mutex             // For overall state (Cache, Clients map)
 	AccountMus    map[string]*sync.Mutex // For per-account IMAP client access
+	Batcher       *Batcher               // For throttled UI updates
 }
 
 func NewCore(configDir string, encryptionKey []byte) *Core {
@@ -71,6 +74,7 @@ func NewCore(configDir string, encryptionKey []byte) *Core {
 	c.Storage = storage.NewMailStorage(configDir)
 	c.Accounts = account.NewManager(configDir)
 	c.TOTP = totp.NewManager(configDir)
+	c.Batcher = NewBatcher(context.TODO(), 800*time.Millisecond) // Global throttler
 	return c
 }
 

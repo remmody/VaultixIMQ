@@ -24,14 +24,14 @@ func escapeXML(s string) string {
 }
 
 func (c *Core) SyncAccount(ctx context.Context, acc mail.Account) {
-	if ctx != nil {
-		wailsRuntime.EventsEmit(ctx, "sync_start", acc.Email)
+	if c.Batcher != nil {
+		c.Batcher.Update("sync_start:"+acc.Email, "syncing")
 	}
 
 	msgs, err := c.FetchInbox(acc.Email, 50)
 	if err != nil {
-		if ctx != nil {
-			wailsRuntime.EventsEmit(ctx, "sync_error", acc.Email)
+		if c.Batcher != nil {
+			c.Batcher.Update("sync_error:"+acc.Email, "error")
 		}
 		return
 	}
@@ -84,8 +84,8 @@ func (c *Core) SyncAccount(ctx context.Context, acc mail.Account) {
 		}
 	}
 
-	if ctx != nil {
-		wailsRuntime.EventsEmit(ctx, "sync_complete", acc.Email)
+	if c.Batcher != nil {
+		c.Batcher.Update("sync_complete:"+acc.Email, "connected")
 	}
 
 	// Phase 31: Sync Deletions

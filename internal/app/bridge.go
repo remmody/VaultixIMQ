@@ -49,6 +49,8 @@ func (a *App) Startup(ctx context.Context) {
 	if a.core.Settings.AutoLogin {
 		a.core.Sync.Start(ctx, a.core.Settings.SyncInterval)
 	}
+	// Correct context for batcher
+	a.core.Batcher.SetContext(ctx)
 }
 
 // --- Lock & Password Bindings ---
@@ -93,11 +95,12 @@ func (a *App) LockApp() {
 
 // --- Bindings ---
 
-func (a *App) GetAccounts() []mail.Account {
+func (a *App) GetAccountsLight() []mail.AccountLight {
 	accs := a.core.Accounts.GetAccounts()
 	a.core.Mu.Lock()
 	defer a.core.Mu.Unlock()
 
+	light := make([]mail.AccountLight, len(accs))
 	for i := range accs {
 		count := 0
 		if msgs, ok := a.core.Cache[accs[i].Email]; ok {
@@ -107,9 +110,33 @@ func (a *App) GetAccounts() []mail.Account {
 				}
 			}
 		}
-		accs[i].UnreadCount = count
+		light[i] = mail.AccountLight{
+			Email:           accs[i].Email,
+			Label:           accs[i].Label,
+			Status:          accs[i].Status,
+			UnreadCount:     count,
+			LastMessageTime: accs[i].LastMessageTime,
+		}
 	}
-	return accs
+	return light
+}
+
+func (a *App) GetAccounts() []mail.Account {
+	return a.core.Accounts.GetAccounts()
+}
+
+func (a *App) GetAccountDetails(email string) mail.Account {
+	accs := a.core.Accounts.GetAccounts()
+	for _, acc := range accs {
+		if acc.Email == email {
+			return acc
+		}
+	}
+	return mail.Account{Email: email}
+}
+
+func (a *App) SetVisibleAccounts(emails []string) {
+	a.core.Sync.SetVisibleAccounts(emails)
 }
 
 func (a *App) AddAccount(email, password, host, port, label string) bool {

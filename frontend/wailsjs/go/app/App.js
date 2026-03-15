@@ -50,8 +50,16 @@ export function GetAboutInfo() {
   return window['go']['app']['App']['GetAboutInfo']();
 }
 
+export function GetAccountDetails(arg1) {
+  return window['go']['app']['App']['GetAccountDetails'](arg1);
+}
+
 export function GetAccounts() {
   return window['go']['app']['App']['GetAccounts']();
+}
+
+export function GetAccountsLight() {
+  return window['go']['app']['App']['GetAccountsLight']();
 }
 
 export function GetCachedMessages(arg1) {
@@ -112,6 +120,10 @@ export function SelectSavePath() {
 
 export function SetAppPassword(arg1) {
   return window['go']['app']['App']['SetAppPassword'](arg1);
+}
+
+export function SetVisibleAccounts(arg1) {
+  return window['go']['app']['App']['SetVisibleAccounts'](arg1);
 }
 
 export function SkipAppPasswordSetup() {

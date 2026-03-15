@@ -28,7 +28,11 @@ export function GenerateTOTP(arg1:string):Promise<totp.Response>;
 
 export function GetAboutInfo():Promise<app.AboutInfo>;
 
+export function GetAccountDetails(arg1:string):Promise<mail.Account>;
+
 export function GetAccounts():Promise<Array<mail.Account>>;
+
+export function GetAccountsLight():Promise<Array<mail.AccountLight>>;
 
 export function GetCachedMessages(arg1:string):Promise<Array<mail.Message>>;
 
@@ -59,6 +63,8 @@ export function SelectOpenPath():Promise<string>;
 export function SelectSavePath():Promise<string>;
 
 export function SetAppPassword(arg1:string):Promise<void>;
+
+export function SetVisibleAccounts(arg1:Array<string>):Promise<void>;
 
 export function SkipAppPasswordSetup():Promise<void>;
 

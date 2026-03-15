@@ -30,6 +30,14 @@ type Account struct {
 	LastMessageTime int64 `json:"last_message_time"`
 }
 
+type AccountLight struct {
+	Email           string `json:"email"`
+	Label           string `json:"label"`
+	Status          string `json:"status"`
+	UnreadCount     int    `json:"unread_count"`
+	LastMessageTime int64  `json:"last_message_time"`
+}
+
 // Pre-compiled regexes to avoid recompilation on every call.
 var (
 	reStyle  = regexp.MustCompile(`(?s)<style.*?>.*?</style>`)

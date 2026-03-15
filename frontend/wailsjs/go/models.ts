@@ -99,6 +99,26 @@ export namespace mail {
 	        this.last_message_time = source["last_message_time"];
 	    }
 	}
+	export class AccountLight {
+	    email: string;
+	    label: string;
+	    status: string;
+	    unread_count: number;
+	    last_message_time: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountLight(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.email = source["email"];
+	        this.label = source["label"];
+	        this.status = source["status"];
+	        this.unread_count = source["unread_count"];
+	        this.last_message_time = source["last_message_time"];
+	    }
+	}
 	export class Message {
 	    uid: number;
 	    subject: string;

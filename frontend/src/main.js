@@ -2,6 +2,9 @@ import Alpine from 'alpinejs';
 import './style.css';
 import {
     GetAccounts,
+    GetAccountsLight,
+    GetAccountDetails,
+    SetVisibleAccounts,
     AddAccount,
     DeleteAccount,
     GetTOTPList,
@@ -120,6 +123,20 @@ document.addEventListener('alpine:init', () => {
                     await this.loadTOTPs();
                     await this.sanitizeTOTPs();
                 }
+
+                // Batch Update Listener
+                EventsOn("batch_update", (updates) => {
+                    Object.keys(updates).forEach(key => {
+                        const [type, email] = key.split(':');
+                        const acc = this.accounts.find(a => a.email === email);
+                        if (acc) {
+                            if (type === 'sync_start') acc.status = 'syncing';
+                            if (type === 'sync_complete') acc.status = 'connected';
+                            if (type === 'sync_error') acc.status = 'error';
+                            if (type === 'unread_count') acc.unread_count = updates[key];
+                        }
+                    });
+                });
 
                 // Load initial about info
                 this.aboutInfo = await GetAboutInfo();
@@ -288,7 +305,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         async selectAccount(acc) {
-            this.selectedAccount = acc;
+            // Lazy load full details
+            this.selectedAccount = await GetAccountDetails(acc.email);
             this.messages = [];
             this.selectedMessage = null;
             this.messageBody = '';
@@ -514,6 +532,13 @@ document.addEventListener('alpine:init', () => {
         handleAccountScroll(e) {
             this.accountScrollTop = e.target.scrollTop;
             this.accountViewportHeight = e.target.offsetHeight;
+            
+            // Notify backend about visible accounts (debounced)
+            clearTimeout(this.scrollFinishTimeout);
+            this.scrollFinishTimeout = setTimeout(() => {
+                const visibleEmails = this.visibleAccounts.map(a => a.email);
+                SetVisibleAccounts(visibleEmails);
+            }, 500);
         },
 
         async askConfirm(title, message) {
