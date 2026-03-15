@@ -89,3 +89,14 @@ func (m *Manager) UpdateLastMessageTime(email string, timestamp int64) {
 		}
 	}
 }
+
+func (m *Manager) UpdateStatus(email string, status string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.accounts {
+		if m.accounts[i].Email == email {
+			m.accounts[i].Status = status
+			return
+		}
+	}
+}

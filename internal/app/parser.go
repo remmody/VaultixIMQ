@@ -15,7 +15,7 @@ import (
 	"github.com/emersion/go-imap"
 )
 
-func (c *Core) FetchBody(emailAddress string, uid uint32) ([]interface{}, error) {
+func (c *Core) FetchBody(emailAddress string, folder string, uid uint32) ([]interface{}, error) {
 	mu := c.GetAccountMutex(emailAddress)
 	mu.Lock()
 	defer mu.Unlock()
@@ -25,7 +25,10 @@ func (c *Core) FetchBody(emailAddress string, uid uint32) ([]interface{}, error)
 		return nil, err
 	}
 
-	cli.Select("INBOX", false)
+	if folder == "" {
+		folder = "INBOX"
+	}
+	cli.Select(folder, false)
 	seqset := new(imap.SeqSet)
 	seqset.AddNum(uid)
 

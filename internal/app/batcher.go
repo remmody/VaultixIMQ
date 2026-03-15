@@ -82,3 +82,12 @@ func (b *Batcher) flush() {
 		wailsRuntime.EventsEmit(ctx, "batch_update", toEmit)
 	}
 }
+
+func (b *Batcher) EmitEvent(name string, data interface{}) {
+	b.mu.Lock()
+	ctx := b.ctx
+	b.mu.Unlock()
+	if ctx != nil && ctx != context.Background() {
+		wailsRuntime.EventsEmit(ctx, name, data)
+	}
+}

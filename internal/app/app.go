@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/remmody/VaultixIMQ/internal/config"
 	"github.com/remmody/VaultixIMQ/internal/mail"
 	"github.com/remmody/VaultixIMQ/internal/syncmgr"
 	"github.com/remmody/VaultixIMQ/internal/totp"
@@ -17,40 +18,43 @@ import (
 )
 
 type App struct {
-	ctx  context.Context
-	core *Core
-	locked bool
+	ctx     context.Context
+	core    *Core
+	locked  bool
 	version string
 }
 
 func NewApp() *App {
+	a := &App{}
+	a.version = Version
+
 	home, _ := os.UserHomeDir()
 	configDir := filepath.Join(home, ".config", "VaultixIMQ")
 	os.MkdirAll(configDir, 0700)
 
-	a := &App{}
 	a.core = NewCore(configDir, nil)
-	a.core.InitEncryption()
-	a.core.FinalizeInit() // Important: Initialize crypto manager with the retrieved key
-	a.core.LoadAll()      // Now that key is ready, load data (with migration)
-	
-	// Initialize Sync Manager
-	a.core.Sync = syncmgr.NewSyncManager(a.core.SyncAccount, a.core.Accounts.GetAccounts)
-	
-	a.locked = a.core.Settings.AppPasswordHash != ""
-	a.version = Version
-	
 	return a
 }
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
-	
-	if a.core.Settings.AutoLogin {
-		a.core.Sync.Start(ctx, a.core.Settings.SyncInterval)
-	}
-	// Correct context for batcher
 	a.core.Batcher.SetContext(ctx)
+	a.core.InitEncryption()
+	a.core.FinalizeInit()
+	a.core.LoadAll()
+	if a.core.Settings.SyncInterval <= 0 {
+		a.core.Settings.SyncInterval = 60
+	}
+	if a.core.Settings.AutoLockInterval <= 0 {
+		a.core.Settings.AutoLockInterval = 15
+	}
+	exists := config.IsVaultSet(a.core.ConfigDir)
+	hasHash := a.core.Settings.AppPasswordHash != ""
+	a.locked = exists && hasHash
+	a.core.Sync = syncmgr.NewSyncManager(a.core.SyncAccount, a.core.Accounts.GetAccounts)
+	if !a.locked && a.core.Settings.AutoLogin {
+		go a.core.Sync.Start(ctx, a.core.Settings.SyncInterval)
+	}
 }
 
 // --- Lock & Password Bindings ---
@@ -64,7 +68,7 @@ func (a *App) IsPasswordSet() bool {
 }
 
 func (a *App) NeedsSetup() bool {
-	return !a.core.Settings.AppPasswordSetupDone
+	return !config.IsVaultSet(a.core.ConfigDir)
 }
 
 func (a *App) VerifyAppPassword(password string) bool {
@@ -73,6 +77,10 @@ func (a *App) VerifyAppPassword(password string) bool {
 
 func (a *App) SetAppPassword(password string) {
 	a.core.SetAppPassword(password)
+	a.locked = false
+	if a.core.Settings.AutoLogin {
+		go a.core.Sync.Start(a.ctx, a.core.Settings.SyncInterval)
+	}
 }
 
 func (a *App) SkipAppPasswordSetup() {
@@ -82,16 +90,16 @@ func (a *App) SkipAppPasswordSetup() {
 func (a *App) UnlockApp(password string) bool {
 	if a.core.VerifyAppPassword(password) {
 		a.locked = false
+		if a.core.Settings.AutoLogin {
+			go a.core.Sync.Start(a.ctx, a.core.Settings.SyncInterval)
+		}
 		return true
 	}
 	return false
 }
 
-func (a *App) LockApp() {
-	if a.IsPasswordSet() {
-		a.locked = true
-	}
-}
+func (a *App) LockVault() { a.locked = true }
+func (a *App) LockApp()   { a.locked = true }
 
 // --- Bindings ---
 
@@ -103,10 +111,12 @@ func (a *App) GetAccountsLight() []mail.AccountLight {
 	light := make([]mail.AccountLight, len(accs))
 	for i := range accs {
 		count := 0
-		if msgs, ok := a.core.Cache[accs[i].Email]; ok {
-			for _, m := range msgs {
-				if !m.Seen {
-					count++
+		if folderCache, ok := a.core.Cache[accs[i].Email]; ok {
+			if msgs, ok := folderCache["INBOX"]; ok {
+				for _, m := range msgs {
+					if !m.Seen {
+						count++
+					}
 				}
 			}
 		}
@@ -136,7 +146,9 @@ func (a *App) GetAccountDetails(email string) mail.Account {
 }
 
 func (a *App) SetVisibleAccounts(emails []string) {
-	a.core.Sync.SetVisibleAccounts(emails)
+	if a.core.Sync != nil {
+		a.core.Sync.SetVisibleAccounts(emails)
+	}
 }
 
 func (a *App) AddAccount(email, password, host, port, label string) bool {
@@ -149,6 +161,9 @@ func (a *App) AddAccount(email, password, host, port, label string) bool {
 	})
 	if success {
 		a.core.SaveVault()
+		if acc, ok := a.core.Accounts.Find(email); ok && a.core.Sync != nil {
+			a.core.Sync.TriggerImmediate(acc)
+		}
 	}
 	return success
 }
@@ -204,28 +219,42 @@ func (a *App) BulkAddAccounts(filePath string, imapServer string) (int, error) {
 	return count, scanner.Err()
 }
 
-func (a *App) GetCachedMessages(email string) []mail.Message {
+func (a *App) GetCachedMessages(email string, folder string) []mail.Message {
 	a.core.Mu.Lock()
 	defer a.core.Mu.Unlock()
-	msgs := a.core.Cache[email]
-	if msgs == nil { return []mail.Message{} }
-	return msgs
+	if folder == "" {
+		folder = "INBOX"
+	}
+	if folderCache, ok := a.core.Cache[email]; ok {
+		if msgs, ok := folderCache[folder]; ok {
+			return msgs
+		}
+	}
+	return []mail.Message{}
 }
 
 func (a *App) FetchInbox(emailAddress string, limit int) ([]mail.Message, error) {
 	return a.core.FetchInbox(emailAddress, limit)
 }
 
-func (a *App) FetchBody(emailAddress string, uid uint32) ([]interface{}, error) {
-	return a.core.FetchBody(emailAddress, uid)
+func (a *App) FetchEmails(emailAddress string, folder string, limit int) ([]mail.Message, error) {
+	return a.core.FetchEmails(emailAddress, folder, limit)
 }
 
-func (a *App) MarkAsRead(email string, uid uint32) error {
-	return a.core.MarkAsRead(email, uid)
+func (a *App) DiscoverSpamFolder(email string) (string, error) {
+	return a.core.DiscoverSpamFolder(email)
 }
 
-func (a *App) MarkAllAsRead(email string) error {
-	return a.core.MarkAllAsRead(email)
+func (a *App) FetchBody(emailAddress string, folder string, uid uint32) ([]interface{}, error) {
+	return a.core.FetchBody(emailAddress, folder, uid)
+}
+
+func (a *App) MarkAsRead(email string, folder string, uid uint32) error {
+	return a.core.MarkAsRead(email, folder, uid)
+}
+
+func (a *App) MarkAllAsRead(email string, folder string) error {
+	return a.core.MarkAllAsRead(email, folder)
 }
 
 func (a *App) ExportProfile(password string, outputPath string) error {
@@ -233,7 +262,21 @@ func (a *App) ExportProfile(password string, outputPath string) error {
 }
 
 func (a *App) ImportProfile(password string, inputPath string) error {
-	return a.core.ImportProfile(password, inputPath)
+	currentHash := a.core.Settings.AppPasswordHash
+	currentSalt := a.core.Settings.AppPasswordSalt
+	currentSetup := a.core.Settings.AppPasswordSetupDone
+
+	err := a.core.ImportProfile(password, inputPath)
+	if err != nil {
+		return err
+	}
+
+	a.core.Settings.AppPasswordHash = currentHash
+	a.core.Settings.AppPasswordSalt = currentSalt
+	a.core.Settings.AppPasswordSetupDone = currentSetup
+
+	a.core.FinalizeInit()
+	return a.core.SaveVault()
 }
 
 func (a *App) GenerateTOTP(secret string) (totp.Response, error) {
@@ -242,9 +285,9 @@ func (a *App) GenerateTOTP(secret string) (totp.Response, error) {
 
 func (a *App) AddTOTP(accountName, secret, issuer, account string) {
 	a.core.TOTP.Add(totp.Entry{
-		AccountName: accountName,
-		Issuer:      issuer,
-		Secret:      secret,
+		AccountName:   accountName,
+		Issuer:        issuer,
+		Secret:        secret,
 		LinkedAccount: account,
 	})
 	a.core.SaveVault()
@@ -266,11 +309,15 @@ func (a *App) GetSettings() Settings {
 func (a *App) UpdateSettings(s Settings) {
 	a.core.Settings = s
 	a.core.SaveVault()
-	// Restart sync loop with new interval
-	a.core.Sync.Start(a.ctx, s.SyncInterval)
+	if a.core.Sync != nil {
+		a.core.Sync.Start(a.ctx, s.SyncInterval)
+	}
 }
 
 func (a *App) GetNextSync() int {
+	if a.core.Sync == nil {
+		return 0
+	}
 	next := a.core.Sync.GetNextSync()
 	diff := time.Until(next)
 	if diff < 0 {
@@ -281,8 +328,8 @@ func (a *App) GetNextSync() int {
 
 func (a *App) SelectSavePath() (string, error) {
 	return runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		DefaultFilename:      "profile_backup.vaultix",
-		Title:                "Save Profile Backup",
+		DefaultFilename: "profile_backup.vaultix",
+		Title:           "Save Profile Backup",
 		Filters: []runtime.FileFilter{
 			{DisplayName: "Vaultix Backup (*.vaultix)", Pattern: "*.vaultix"},
 		},
@@ -331,4 +378,23 @@ func (a *App) GetAboutInfo() AboutInfo {
 
 func (a *App) CheckForUpdates() (*UpdateInfo, error) {
 	return a.core.CheckForUpdates()
+}
+
+func (a *App) StartEngine() {
+	if !a.locked && a.core.Sync != nil {
+		go a.core.Sync.Start(a.ctx, a.core.Settings.SyncInterval)
+	}
+}
+
+func (a *App) ChangeAppPassword(old, new string) error {
+	return a.core.ChangeAppPassword(old, new)
+}
+
+func (a *App) IsUnsecuredImport() bool {
+	return false
+}
+
+func (a *App) IsVaultSet() bool {
+	_, err := os.Stat(filepath.Join(a.core.ConfigDir, "vault.vxc"))
+	return err == nil
 }

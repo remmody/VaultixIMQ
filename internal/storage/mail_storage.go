@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type MailStorage struct {
@@ -18,33 +19,37 @@ func NewMailStorage(configDir string) *MailStorage {
 	return &MailStorage{BaseDir: baseDir}
 }
 
-func (s *MailStorage) GetAccountDir(email string) string {
-	hash := sha256.Sum256([]byte(email))
-	accountDir := filepath.Join(s.BaseDir, hex.EncodeToString(hash[:]))
-	os.MkdirAll(accountDir, 0700)
-	return accountDir
+func (s *MailStorage) GetFolderDir(email string, folder string) string {
+	accountHash := sha256.Sum256([]byte(email))
+	accountDir := filepath.Join(s.BaseDir, hex.EncodeToString(accountHash[:]))
+	
+	folderHash := sha256.Sum256([]byte(strings.ToUpper(folder)))
+	folderDir := filepath.Join(accountDir, hex.EncodeToString(folderHash[:]))
+	
+	os.MkdirAll(folderDir, 0700)
+	return folderDir
 }
 
-func (s *MailStorage) SaveMail(email string, uid uint32, encryptedData []byte) error {
-	dir := s.GetAccountDir(email)
+func (s *MailStorage) SaveMail(email string, folder string, uid uint32, encryptedData []byte) error {
+	dir := s.GetFolderDir(email, folder)
 	filename := filepath.Join(dir, fmt.Sprintf("%d.enc", uid))
 	return os.WriteFile(filename, encryptedData, 0600)
 }
 
-func (s *MailStorage) LoadMail(email string, uid uint32) ([]byte, error) {
-	dir := s.GetAccountDir(email)
+func (s *MailStorage) LoadMail(email string, folder string, uid uint32) ([]byte, error) {
+	dir := s.GetFolderDir(email, folder)
 	filename := filepath.Join(dir, fmt.Sprintf("%d.enc", uid))
 	return os.ReadFile(filename)
 }
 
-func (s *MailStorage) DeleteMail(email string, uid uint32) error {
-	dir := s.GetAccountDir(email)
+func (s *MailStorage) DeleteMail(email string, folder string, uid uint32) error {
+	dir := s.GetFolderDir(email, folder)
 	filename := filepath.Join(dir, fmt.Sprintf("%d.enc", uid))
 	return os.Remove(filename)
 }
 
-func (s *MailStorage) ListUIDs(email string) ([]uint32, error) {
-	dir := s.GetAccountDir(email)
+func (s *MailStorage) ListUIDs(email string, folder string) ([]uint32, error) {
+	dir := s.GetFolderDir(email, folder)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err

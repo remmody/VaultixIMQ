@@ -14,6 +14,10 @@ export function BulkAddAccounts(arg1, arg2) {
   return window['go']['app']['App']['BulkAddAccounts'](arg1, arg2);
 }
 
+export function ChangeAppPassword(arg1, arg2) {
+  return window['go']['app']['App']['ChangeAppPassword'](arg1, arg2);
+}
+
 export function CheckForUpdates() {
   return window['go']['app']['App']['CheckForUpdates']();
 }
@@ -30,12 +34,20 @@ export function DeleteTOTP(arg1) {
   return window['go']['app']['App']['DeleteTOTP'](arg1);
 }
 
+export function DiscoverSpamFolder(arg1) {
+  return window['go']['app']['App']['DiscoverSpamFolder'](arg1);
+}
+
 export function ExportProfile(arg1, arg2) {
   return window['go']['app']['App']['ExportProfile'](arg1, arg2);
 }
 
-export function FetchBody(arg1, arg2) {
-  return window['go']['app']['App']['FetchBody'](arg1, arg2);
+export function FetchBody(arg1, arg2, arg3) {
+  return window['go']['app']['App']['FetchBody'](arg1, arg2, arg3);
+}
+
+export function FetchEmails(arg1, arg2, arg3) {
+  return window['go']['app']['App']['FetchEmails'](arg1, arg2, arg3);
 }
 
 export function FetchInbox(arg1, arg2) {
@@ -62,8 +74,8 @@ export function GetAccountsLight() {
   return window['go']['app']['App']['GetAccountsLight']();
 }
 
-export function GetCachedMessages(arg1) {
-  return window['go']['app']['App']['GetCachedMessages'](arg1);
+export function GetCachedMessages(arg1, arg2) {
+  return window['go']['app']['App']['GetCachedMessages'](arg1, arg2);
 }
 
 export function GetNextSync() {
@@ -90,16 +102,28 @@ export function IsPasswordSet() {
   return window['go']['app']['App']['IsPasswordSet']();
 }
 
+export function IsUnsecuredImport() {
+  return window['go']['app']['App']['IsUnsecuredImport']();
+}
+
+export function IsVaultSet() {
+  return window['go']['app']['App']['IsVaultSet']();
+}
+
 export function LockApp() {
   return window['go']['app']['App']['LockApp']();
 }
 
-export function MarkAllAsRead(arg1) {
-  return window['go']['app']['App']['MarkAllAsRead'](arg1);
+export function LockVault() {
+  return window['go']['app']['App']['LockVault']();
 }
 
-export function MarkAsRead(arg1, arg2) {
-  return window['go']['app']['App']['MarkAsRead'](arg1, arg2);
+export function MarkAllAsRead(arg1, arg2) {
+  return window['go']['app']['App']['MarkAllAsRead'](arg1, arg2);
+}
+
+export function MarkAsRead(arg1, arg2, arg3) {
+  return window['go']['app']['App']['MarkAsRead'](arg1, arg2, arg3);
 }
 
 export function NeedsSetup() {
@@ -128,6 +152,10 @@ export function SetVisibleAccounts(arg1) {
 
 export function SkipAppPasswordSetup() {
   return window['go']['app']['App']['SkipAppPasswordSetup']();
+}
+
+export function StartEngine() {
+  return window['go']['app']['App']['StartEngine']();
 }
 
 export function UnlockApp(arg1) {

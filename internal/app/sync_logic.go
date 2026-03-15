@@ -24,115 +24,124 @@ func escapeXML(s string) string {
 }
 
 func (c *Core) SyncAccount(ctx context.Context, acc mail.Account) {
-	if c.Batcher != nil {
-		c.Batcher.Update("sync_start:"+acc.Email, "syncing")
+	c.Batcher.Update("account_status:"+acc.Email, "syncing")
+	c.Accounts.UpdateStatus(acc.Email, "syncing")
+
+	c.syncFolder(ctx, acc, "INBOX")
+
+	spamFolder, err := c.DiscoverSpamFolder(acc.Email)
+	if err == nil && spamFolder != "" {
+		c.syncFolder(ctx, acc, spamFolder)
 	}
 
-	msgs, err := c.FetchInbox(acc.Email, 50)
-	if err != nil {
-		if c.Batcher != nil {
-			c.Batcher.Update("sync_error:"+acc.Email, "error")
+	c.Batcher.Update("account_status:"+acc.Email, "connected")
+	c.Accounts.UpdateStatus(acc.Email, "connected")
+}
+
+func (c *Core) countUnread(email string) int {
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	count := 0
+	if folderCache, ok := c.Cache[email]; ok {
+		if msgs, ok := folderCache["INBOX"]; ok {
+			for _, m := range msgs {
+				if !m.Seen {
+					count++
+				}
+			}
 		}
+	}
+	return count
+}
+
+func (c *Core) syncFolder(ctx context.Context, acc mail.Account, folderName string) {
+	cacheFolder := "INBOX"
+	if strings.Contains(strings.ToUpper(folderName), "SPAM") || strings.Contains(strings.ToUpper(folderName), "JUNK") {
+		cacheFolder = "SPAM"
+	}
+
+	msgs, err := c.FetchEmails(acc.Email, folderName, 50)
+	if err != nil {
 		return
 	}
 
 	c.Mu.Lock()
-	oldMessages := c.Cache[acc.Email]
-	c.Cache[acc.Email] = msgs
+	if c.Cache[acc.Email] == nil {
+		c.Cache[acc.Email] = make(map[string][]mail.Message)
+	}
+	oldMessages := c.Cache[acc.Email][cacheFolder]
+	c.Cache[acc.Email][cacheFolder] = msgs
 	c.Mu.Unlock()
 
-	// Check for new messages
 	if len(msgs) > 0 {
 		if len(oldMessages) > 0 {
 			newCount := 0
-			latestOldUID := oldMessages[0].UID
+			oldUIDs := make(map[uint32]bool)
+			for _, m := range oldMessages {
+				oldUIDs[m.UID] = true
+			}
+			
 			for _, m := range msgs {
-				if m.UID > latestOldUID {
+				if !oldUIDs[m.UID] {
 					newCount++
 				}
 			}
 
 			if newCount > 0 {
 				msg := msgs[0]
-				// Update last message time for sorting
-				c.Accounts.UpdateLastMessageTime(acc.Email, msg.DateUnix)
+				if cacheFolder == "INBOX" {
+					c.Accounts.UpdateLastMessageTime(acc.Email, msg.DateUnix)
+					c.Batcher.Update("unread_count:"+acc.Email, c.countUnread(acc.Email))
+				}
 
 				if c.Settings.Notifications {
 					suffix := ""
 					if newCount > 1 {
 						suffix = fmt.Sprintf(" (+%d more)", newCount-1)
 					}
-					// Cleaner title: "Inbox: [Label]"
-					title := fmt.Sprintf("Inbox: %s", acc.Label)
+					title := fmt.Sprintf("%s: %s", cacheFolder, acc.Label)
 					body := fmt.Sprintf("%s: %s%s", msg.From, msg.Subject, suffix)
 					c.NotifyWithEmail(ctx, title, body, acc.Email)
+					
+					c.Batcher.EmitEvent("NewEmailNotification", map[string]interface{}{
+						"email":   acc.Email,
+						"label":   acc.Label,
+						"folder":  cacheFolder,
+						"subject": msg.Subject,
+						"from":    msg.From,
+					})
 				}
 			}
-		} else {
-			// fmt.Printf("Sync: Initial sync for %s, %d messages loaded into cache.\n", acc.Email, len(msgs))
 		}
 	}
 
-	// Phase 9: Save to persistent storage
-	for _, m := range msgs {
-		data, err := json.Marshal(m)
-		if err == nil {
-			encrypted, err := c.Crypto.Encrypt(data)
+	c.Mu.Lock()
+	hasKey := c.EncryptionKey != nil
+	c.Mu.Unlock()
+
+	if hasKey {
+		for _, m := range msgs {
+			data, err := json.Marshal(m)
 			if err == nil {
-				c.Storage.SaveMail(acc.Email, m.UID, encrypted)
+				encrypted, err := c.Crypto.Encrypt(data)
+				if err == nil {
+					c.Storage.SaveMail(acc.Email, cacheFolder, m.UID, encrypted)
+				}
 			}
 		}
 	}
 
-	if c.Batcher != nil {
-		c.Batcher.Update("sync_complete:"+acc.Email, "connected")
-	}
-
-	// Phase 31: Sync Deletions
-	localUIDs, err := c.Storage.ListUIDs(acc.Email)
+	localUIDs, err := c.Storage.ListUIDs(acc.Email, cacheFolder)
 	if err == nil {
 		serverUIDMap := make(map[uint32]bool)
-		var minServerUID uint32
-		hasMsgs := len(msgs) > 0
-
-		if hasMsgs {
-			minServerUID = msgs[0].UID
-			for _, m := range msgs {
-				serverUIDMap[m.UID] = true
-				if m.UID < minServerUID {
-					minServerUID = m.UID
-				}
-			}
+		for _, m := range msgs {
+			serverUIDMap[m.UID] = true
 		}
 
-		deletedAny := false
 		for _, luid := range localUIDs {
-			// If we have messages, sync deletions within the current window
-			// If we have NO messages, it means the server is empty (for the last 50 window),
-			// so we delete everything we previously thought was there.
-			if !hasMsgs || luid >= minServerUID {
-				if !serverUIDMap[luid] {
-					c.Storage.DeleteMail(acc.Email, luid)
-					deletedAny = true
-				}
+			if !serverUIDMap[luid] {
+				c.Storage.DeleteMail(acc.Email, cacheFolder, luid)
 			}
-		}
-
-		if deletedAny {
-			// Refresh cache after deletions
-			c.Mu.Lock()
-			currentCache := c.Cache[acc.Email]
-			newCache := make([]mail.Message, 0, len(currentCache))
-			for _, m := range currentCache {
-				if hasMsgs {
-					if m.UID < minServerUID || serverUIDMap[m.UID] {
-						newCache = append(newCache, m)
-					}
-				}
-				// if !hasMsgs, newCache remains empty (all deleted)
-			}
-			c.Cache[acc.Email] = newCache
-			c.Mu.Unlock()
 		}
 	}
 }
@@ -143,24 +152,16 @@ func (c *Core) Notify(ctx context.Context, title, message string) {
 
 func (c *Core) NotifyWithEmail(ctx context.Context, title, message string, email string) {
 	if c.Settings.Notifications {
-		// OS-specific sanitization
 		var safeTitle, safeMsg string
 		if runtime.GOOS == "windows" {
 			safeTitle = escapeXML(title)
 			safeMsg = escapeXML(message)
 		} else {
-			// On Linux/others, just strip control characters but don't escape XML
 			safeTitle = stripControlChars(title)
 			safeMsg = stripControlChars(message)
 		}
 
-		// System notification
-		err := beeep.Notify(safeTitle, safeMsg, "")
-		if err != nil {
-			// fmt.Printf("System Notification error: %v\n", err)
-		}
-
-		// In-app notification
+		_ = beeep.Notify(safeTitle, safeMsg, "")
 		if ctx != nil {
 			wailsRuntime.EventsEmit(ctx, "notification", map[string]interface{}{
 				"title": title,

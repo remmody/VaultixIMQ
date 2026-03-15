@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/remmody/VaultixIMQ/internal/account"
 	"github.com/remmody/VaultixIMQ/internal/backup"
@@ -17,12 +19,11 @@ import (
 	"github.com/remmody/VaultixIMQ/internal/storage"
 	"github.com/remmody/VaultixIMQ/internal/syncmgr"
 	"github.com/remmody/VaultixIMQ/internal/totp"
-	"time"
 
 	"github.com/emersion/go-imap/client"
 )
 
-var Version = "1.0.0" // Default version, should be overridden by ldflags during build
+var Version = "1.0.0"
 
 type Settings struct {
 	SyncInterval         int    `json:"sync_interval"`
@@ -48,7 +49,7 @@ type Core struct {
 	Crypto        *crypto.Manager
 	Storage       *storage.MailStorage
 	Clients       map[string]*client.Client
-	Cache         map[string][]mail.Message
+	Cache         map[string]map[string][]mail.Message
 	Settings      Settings
 	ConfigDir     string
 	EncryptionKey []byte
@@ -63,7 +64,7 @@ func NewCore(configDir string, encryptionKey []byte) *Core {
 		EncryptionKey: encryptionKey,
 		Clients:       make(map[string]*client.Client),
 		AccountMus:    make(map[string]*sync.Mutex),
-		Cache:         make(map[string][]mail.Message),
+		Cache:         make(map[string]map[string][]mail.Message),
 		Settings: Settings{ // Default settings
 			SyncInterval:  10,
 			AutoLogin:     true,
@@ -90,9 +91,11 @@ func (c *Core) GetAccountMutex(email string) *sync.Mutex {
 }
 
 func (c *Core) FinalizeInit() {
-	c.Crypto = crypto.NewManager(c.EncryptionKey)
-	c.Accounts.SetCrypto(c.Crypto)
-	c.TOTP.SetCrypto(c.Crypto)
+	if c.EncryptionKey != nil {
+		c.Crypto = crypto.NewManager(c.EncryptionKey)
+		c.Accounts.SetCrypto(c.Crypto)
+		c.TOTP.SetCrypto(c.Crypto)
+	}
 }
 
 func (c *Core) LoadAll() {
@@ -141,29 +144,35 @@ func (c *Core) loadCache(accounts []mail.Account) {
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
 	for _, acc := range accounts {
-		uids, err := c.Storage.ListUIDs(acc.Email)
-		if err != nil || len(uids) == 0 {
-			continue
+		if c.Cache[acc.Email] == nil {
+			c.Cache[acc.Email] = make(map[string][]mail.Message)
 		}
-		sort.Slice(uids, func(i, j int) bool { return uids[i] > uids[j] })
-		
-		limit := 50
-		if len(uids) < limit {
-			limit = len(uids)
-		}
-
-		msgs := make([]mail.Message, 0, limit)
-		for i := 0; i < limit; i++ {
-			if m, err := c.loadMessage(acc.Email, uids[i]); err == nil {
-				msgs = append(msgs, m)
+		// Load INBOX by default
+		for _, folder := range []string{"INBOX", "SPAM"} {
+			uids, err := c.Storage.ListUIDs(acc.Email, folder)
+			if err != nil || len(uids) == 0 {
+				continue
 			}
+			sort.Slice(uids, func(i, j int) bool { return uids[i] > uids[j] })
+
+			limit := 50
+			if len(uids) < limit {
+				limit = len(uids)
+			}
+
+			msgs := make([]mail.Message, 0, limit)
+			for i := 0; i < limit; i++ {
+				if m, err := c.loadMessage(acc.Email, folder, uids[i]); err == nil {
+					msgs = append(msgs, m)
+				}
+			}
+			c.Cache[acc.Email][folder] = msgs
 		}
-		c.Cache[acc.Email] = msgs
 	}
 }
 
-func (c *Core) loadMessage(email string, uid uint32) (mail.Message, error) {
-	data, err := c.Storage.LoadMail(email, uid)
+func (c *Core) loadMessage(email string, folder string, uid uint32) (mail.Message, error) {
+	data, err := c.Storage.LoadMail(email, folder, uid)
 	if err != nil {
 		return mail.Message{}, err
 	}
@@ -177,7 +186,7 @@ func (c *Core) loadMessage(email string, uid uint32) (mail.Message, error) {
 }
 
 func (c *Core) SaveVault() error {
-	if c.Crypto == nil {
+	if c.Crypto == nil || c.EncryptionKey == nil {
 		return nil
 	}
 	v := Vault{
@@ -231,14 +240,10 @@ func (c *Core) migrateAccounts(v *Vault) []string {
 		if data, err := os.ReadFile(p); err == nil {
 			var accs []mail.Account
 			if c.tryLoad(data, &accs) && len(accs) > 0 {
-				for i := range accs { accs[i].Finalize() }
+				for i := range accs {
+					accs[i].Finalize()
+				}
 				v.Accounts = accs
-				return []string{p}
-			}
-			var single mail.Account
-			if c.tryLoad(data, &single) && single.Email != "" {
-				single.Finalize()
-				v.Accounts = []mail.Account{single}
 				return []string{p}
 			}
 		}
@@ -282,16 +287,8 @@ func (c *Core) migrateSettings(v *Vault) []string {
 }
 
 func (c *Core) cleanupLegacy(migrated []string) {
-	allFiles := [][]string{
-		migrated,
-		{filepath.Join(c.ConfigDir, "accounts.vxc"), filepath.Join(c.ConfigDir, "accounts.json"), filepath.Join(c.ConfigDir, "account.json")},
-		{filepath.Join(c.ConfigDir, "totp.vxc"), filepath.Join(c.ConfigDir, "totp.json"), filepath.Join(c.ConfigDir, "totp_secrets.json")},
-		{filepath.Join(c.ConfigDir, "settings.vxc"), filepath.Join(c.ConfigDir, "settings.json")},
-	}
-	for _, set := range allFiles {
-		for _, p := range set {
-			os.Remove(p)
-		}
+	for _, p := range migrated {
+		os.Remove(p)
 	}
 }
 
@@ -301,10 +298,24 @@ func (c *Core) SaveSettings() {
 
 func (c *Core) SetAppPassword(password string) {
 	c.Settings.AppPasswordSalt = base64.StdEncoding.EncodeToString(generateSalt())
-	hash := crypto.DeriveKey(password, decodeSalt(c.Settings.AppPasswordSalt))
+	hash := crypto.DeriveKey(password, c.DecodeSalt(c.Settings.AppPasswordSalt))
 	c.Settings.AppPasswordHash = base64.StdEncoding.EncodeToString(hash)
 	c.Settings.AppPasswordSetupDone = true
 	c.SaveVault()
+}
+
+func (c *Core) ChangeAppPassword(old, new string) error {
+	if !c.VerifyAppPassword(old) {
+		return fmt.Errorf("invalid current password")
+	}
+	newSalt := generateSalt()
+	newHash := crypto.DeriveKey(new, newSalt)
+
+	c.Settings.AppPasswordSalt = base64.StdEncoding.EncodeToString(newSalt)
+	c.Settings.AppPasswordHash = base64.StdEncoding.EncodeToString(newHash)
+	c.Settings.AppPasswordSetupDone = true
+
+	return c.SaveVault()
 }
 
 func (c *Core) SkipAppPasswordSetup() {
@@ -318,7 +329,7 @@ func (c *Core) VerifyAppPassword(password string) bool {
 	if c.Settings.AppPasswordHash == "" {
 		return true
 	}
-	salt := decodeSalt(c.Settings.AppPasswordSalt)
+	salt := c.DecodeSalt(c.Settings.AppPasswordSalt)
 	hash := crypto.DeriveKey(password, salt)
 	return base64.StdEncoding.EncodeToString(hash) == c.Settings.AppPasswordHash
 }
@@ -329,22 +340,20 @@ func generateSalt() []byte {
 	return s
 }
 
-func decodeSalt(s string) []byte {
+func (c *Core) DecodeSalt(s string) []byte {
 	d, _ := base64.StdEncoding.DecodeString(s)
 	return d
 }
 
 func (c *Core) ExportProfile(password string, outputPath string) error {
-	// Note: The UI should check app password BEFORE calling this if set
 	v := Vault{
 		Accounts: c.Accounts.GetAccounts(),
 		TOTP:     c.TOTP.GetEntries(),
 		Settings: c.Settings,
 	}
-	// Strip sensitive app password fields for export
 	v.Settings.AppPasswordHash = ""
 	v.Settings.AppPasswordSalt = ""
-	v.Settings.AppPasswordSetupDone = false // Allow recipient to set their own
+	v.Settings.AppPasswordSetupDone = false
 
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -355,18 +364,17 @@ func (c *Core) ExportProfile(password string, outputPath string) error {
 }
 
 func (c *Core) ImportProfile(password string, inputPath string) error {
-	key, vaultData, err := backup.ImportProfile(password, inputPath)
+	_, vaultData, err := backup.ImportProfile(password, inputPath)
 	if err != nil {
 		return err
 	}
-	c.EncryptionKey = key
 
 	var v Vault
 	if err := json.Unmarshal(vaultData, &v); err != nil {
 		return err
 	}
 
-	// Reset password setup flag to ask the user on this new machine/installation
+	// Сбрасываем старые настройки пароля из бэкапа
 	v.Settings.AppPasswordSetupDone = false
 	v.Settings.AppPasswordHash = ""
 	v.Settings.AppPasswordSalt = ""
@@ -375,6 +383,7 @@ func (c *Core) ImportProfile(password string, inputPath string) error {
 	c.Accounts.SetAccounts(v.Accounts)
 	c.TOTP.SetEntries(v.TOTP)
 
-	c.FinalizeInit()
-	return c.SaveVault()
+	// Мы убрали отсюда c.FinalizeInit() и c.SaveVault(),
+	// потому что app.go и так вызывает их сразу после этой функции
+	return nil
 }

@@ -3,11 +3,11 @@ package app
 import (
 	"fmt"
 	"sort"
-
-	"github.com/remmody/VaultixIMQ/internal/mail"
+	"strings"
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/remmody/VaultixIMQ/internal/mail"
 )
 
 func (c *Core) GetClient(email string) (*client.Client, error) {
@@ -17,10 +17,10 @@ func (c *Core) GetClient(email string) (*client.Client, error) {
 		if err := cli.Noop(); err == nil {
 			return cli, nil
 		}
-		cli.Logout()
-	} else {
-		c.Mu.Unlock()
+		c.Mu.Lock()
+		delete(c.Clients, email)
 	}
+	c.Mu.Unlock()
 
 	target, found := c.Accounts.Find(email)
 	if !found {
@@ -46,6 +46,10 @@ func (c *Core) GetClient(email string) (*client.Client, error) {
 }
 
 func (c *Core) FetchInbox(emailAddress string, limit int) ([]mail.Message, error) {
+	return c.FetchEmails(emailAddress, "INBOX", limit)
+}
+
+func (c *Core) FetchEmails(emailAddress string, folder string, limit int) ([]mail.Message, error) {
 	mu := c.GetAccountMutex(emailAddress)
 	mu.Lock()
 	defer mu.Unlock()
@@ -55,7 +59,11 @@ func (c *Core) FetchInbox(emailAddress string, limit int) ([]mail.Message, error
 		return nil, err
 	}
 
-	mbox, err := cli.Select("INBOX", false)
+	if folder == "" {
+		folder = "INBOX"
+	}
+
+	mbox, err := cli.Select(folder, false)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +125,68 @@ func (c *Core) FetchInbox(emailAddress string, limit int) ([]mail.Message, error
 	return mails, nil
 }
 
-func (c *Core) MarkAsRead(email string, uid uint32) error {
+func (c *Core) DiscoverSpamFolder(email string) (string, error) {
+	mu := c.GetAccountMutex(email)
+	mu.Lock()
+	defer mu.Unlock()
+
+	cli, err := c.GetClient(email)
+	if err != nil {
+		return "", err
+	}
+
+	mboxes := make(chan *imap.MailboxInfo, 50)
+	done := make(chan error, 1)
+	go func() {
+		done <- cli.List("", "*", mboxes)
+	}()
+
+	var foundName string
+	var fallbackName string
+	
+	spamAttr := "\\Spam"
+	junkAttr := "\\Junk"
+
+	for m := range mboxes {
+		nameUpper := strings.ToUpper(m.Name)
+		isSpam := false
+		for _, attr := range m.Attributes {
+			if strings.EqualFold(attr, spamAttr) || strings.EqualFold(attr, junkAttr) {
+				isSpam = true
+				break
+			}
+		}
+
+		if isSpam {
+			foundName = m.Name
+			break
+		}
+
+		if nameUpper == "SPAM" || nameUpper == "JUNK" || nameUpper == "JUNK EMAIL" || nameUpper == "[GMAIL]/SPAM" {
+			fallbackName = m.Name
+		}
+		
+		if fallbackName == "" && (strings.Contains(nameUpper, "SPAM") || strings.Contains(nameUpper, "JUNK")) {
+			fallbackName = m.Name
+		}
+	}
+
+	if err := <-done; err != nil {
+		return "", err
+	}
+
+	if foundName == "" {
+		foundName = fallbackName
+	}
+
+	if foundName != "" {
+		return foundName, nil
+	}
+
+	return "", fmt.Errorf("spam folder not discovered")
+}
+
+func (c *Core) MarkAsRead(email string, folder string, uid uint32) error {
 	mu := c.GetAccountMutex(email)
 	mu.Lock()
 	defer mu.Unlock()
@@ -127,7 +196,11 @@ func (c *Core) MarkAsRead(email string, uid uint32) error {
 		return err
 	}
 
-	_, err = cli.Select("INBOX", false)
+	if folder == "" {
+		folder = "INBOX"
+	}
+
+	_, err = cli.Select(folder, false)
 	if err != nil {
 		return err
 	}
@@ -138,10 +211,29 @@ func (c *Core) MarkAsRead(email string, uid uint32) error {
 	item := imap.FormatFlagsOp(imap.AddFlags, true)
 	flags := []interface{}{imap.SeenFlag}
 
-	return cli.UidStore(seqset, item, flags, nil)
+	err = cli.UidStore(seqset, item, flags, nil)
+	if err != nil {
+		return err
+	}
+
+	// Update local cache
+	c.Mu.Lock()
+	if folderCache, ok := c.Cache[email]; ok {
+		if msgs, ok := folderCache[folder]; ok {
+			for i := range msgs {
+				if msgs[i].UID == uid {
+					msgs[i].Seen = true
+					break
+				}
+			}
+		}
+	}
+	c.Mu.Unlock()
+
+	return nil
 }
 
-func (c *Core) MarkAllAsRead(email string) error {
+func (c *Core) MarkAllAsRead(email string, folder string) error {
 	mu := c.GetAccountMutex(email)
 	mu.Lock()
 	defer mu.Unlock()
@@ -151,12 +243,15 @@ func (c *Core) MarkAllAsRead(email string) error {
 		return err
 	}
 
-	_, err = cli.Select("INBOX", false)
+	if folder == "" {
+		folder = "INBOX"
+	}
+
+	_, err = cli.Select(folder, false)
 	if err != nil {
 		return err
 	}
 
-	// Search for all UNSEEN messages
 	criteria := imap.NewSearchCriteria()
 	criteria.WithoutFlags = []string{imap.SeenFlag}
 	uids, err := cli.UidSearch(criteria)
@@ -168,7 +263,6 @@ func (c *Core) MarkAllAsRead(email string) error {
 		return nil
 	}
 
-	// Chunk updates to prevent long command syntax errors (especially on Yandex)
 	chunkSize := 100
 	item := imap.FormatFlagsOp(imap.AddFlags, true)
 	flags := []interface{}{imap.SeenFlag}
@@ -190,17 +284,17 @@ func (c *Core) MarkAllAsRead(email string) error {
 		}
 	}
 
-	// Update local cache
 	c.Mu.Lock()
-	if msgs, ok := c.Cache[email]; ok {
-		// Only mark those UIDs that we actually processed as seen
-		uidMap := make(map[uint32]bool)
-		for _, uid := range uids {
-			uidMap[uid] = true
-		}
-		for i := range msgs {
-			if uidMap[msgs[i].UID] {
-				msgs[i].Seen = true
+	if folderCache, ok := c.Cache[email]; ok {
+		if msgs, ok := folderCache[folder]; ok {
+			uidMap := make(map[uint32]bool)
+			for _, uid := range uids {
+				uidMap[uid] = true
+			}
+			for i := range msgs {
+				if uidMap[msgs[i].UID] {
+					msgs[i].Seen = true
+				}
 			}
 		}
 	}

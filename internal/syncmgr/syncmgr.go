@@ -129,3 +129,9 @@ func (m *SyncManager) GetNextSync() time.Time {
 	defer m.mu.Unlock()
 	return m.nextSync
 }
+
+func (m *SyncManager) TriggerImmediate(acc mail.Account) {
+	if m.ctx != nil && m.syncFunc != nil {
+		go m.syncFunc(m.ctx, acc)
+	}
+}

@@ -10,6 +10,8 @@ export function AddTOTP(arg1:string,arg2:string,arg3:string,arg4:string):Promise
 
 export function BulkAddAccounts(arg1:string,arg2:string):Promise<number>;
 
+export function ChangeAppPassword(arg1:string,arg2:string):Promise<void>;
+
 export function CheckForUpdates():Promise<app.UpdateInfo>;
 
 export function CopyToClipboard(arg1:string):Promise<boolean>;
@@ -18,9 +20,13 @@ export function DeleteAccount(arg1:string):Promise<void>;
 
 export function DeleteTOTP(arg1:string):Promise<void>;
 
+export function DiscoverSpamFolder(arg1:string):Promise<string>;
+
 export function ExportProfile(arg1:string,arg2:string):Promise<void>;
 
-export function FetchBody(arg1:string,arg2:number):Promise<Array<any>>;
+export function FetchBody(arg1:string,arg2:string,arg3:number):Promise<Array<any>>;
+
+export function FetchEmails(arg1:string,arg2:string,arg3:number):Promise<Array<mail.Message>>;
 
 export function FetchInbox(arg1:string,arg2:number):Promise<Array<mail.Message>>;
 
@@ -34,7 +40,7 @@ export function GetAccounts():Promise<Array<mail.Account>>;
 
 export function GetAccountsLight():Promise<Array<mail.AccountLight>>;
 
-export function GetCachedMessages(arg1:string):Promise<Array<mail.Message>>;
+export function GetCachedMessages(arg1:string,arg2:string):Promise<Array<mail.Message>>;
 
 export function GetNextSync():Promise<number>;
 
@@ -48,11 +54,17 @@ export function IsLocked():Promise<boolean>;
 
 export function IsPasswordSet():Promise<boolean>;
 
+export function IsUnsecuredImport():Promise<boolean>;
+
+export function IsVaultSet():Promise<boolean>;
+
 export function LockApp():Promise<void>;
 
-export function MarkAllAsRead(arg1:string):Promise<void>;
+export function LockVault():Promise<void>;
 
-export function MarkAsRead(arg1:string,arg2:number):Promise<void>;
+export function MarkAllAsRead(arg1:string,arg2:string):Promise<void>;
+
+export function MarkAsRead(arg1:string,arg2:string,arg3:number):Promise<void>;
 
 export function NeedsSetup():Promise<boolean>;
 
@@ -67,6 +79,8 @@ export function SetAppPassword(arg1:string):Promise<void>;
 export function SetVisibleAccounts(arg1:Array<string>):Promise<void>;
 
 export function SkipAppPasswordSetup():Promise<void>;
+
+export function StartEngine():Promise<void>;
 
 export function UnlockApp(arg1:string):Promise<boolean>;
 

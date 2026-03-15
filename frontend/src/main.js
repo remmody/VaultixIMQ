@@ -11,7 +11,7 @@ import {
     AddTOTP,
     DeleteTOTP,
     GenerateTOTP,
-    FetchInbox,
+    FetchEmails,
     FetchBody,
     GetSettings,
     UpdateSettings,
@@ -30,21 +30,25 @@ import {
     SetAppPassword,
     SkipAppPasswordSetup,
     UnlockApp,
-    LockApp,
-    CopyToClipboard,
     GetAboutInfo,
-    CheckForUpdates
+    CheckForUpdates,
+    StartEngine,
+    IsVaultSet,
+    IsUnsecuredImport,
+    LockApp,
+    LockVault
 } from '../wailsjs/go/app/App';
 import * as runtime from '../wailsjs/runtime';
 
 globalThis.Alpine = Alpine;
 
-console.log("VaultixIMQ main.js loading...");
+// console.log("VaultixIMQ main.js loading...");
 
 document.addEventListener('alpine:init', () => {
-    console.log("Alpine initialized, registering vaultixApp...");
+    // console.log("Alpine initialized, registering vaultixApp...");
     Alpine.data('vaultixApp', () => ({
         accounts: [],
+        sortedAccounts: [],
         selectedAccount: null,
         totpList: [],
         messages: [],
@@ -61,7 +65,13 @@ document.addEventListener('alpine:init', () => {
         showSettings: false,
         showAbout: false,
         showBulkAdd: false,
+        showChangePassword: false,
         accountSearch: '',
+        currentFolder: 'INBOX',
+        changePassOld: '',
+        changePassNew: '',
+        changePassConfirm: '',
+        passwordSet: false,
         totpTimers: {},
         
         // Virtual Scrolling State
@@ -72,6 +82,7 @@ document.addEventListener('alpine:init', () => {
 
         isLocked: false,
         showPasswordSetup: false,
+        isUnsecuredImport: false,
         lockPass: '',
         setupPass: '',
         lastActivity: Date.now(),
@@ -98,11 +109,11 @@ document.addEventListener('alpine:init', () => {
         },
 
         settings: {
-            sync_interval: 10,
+            sync_interval: 60,
             auto_login: true,
             notifications: true,
             sound: true,
-            auto_lock_interval: 5
+            auto_lock_interval: 15
         },
         nextSyncSecs: 0,
         bulkImapServer: '',
@@ -113,29 +124,77 @@ document.addEventListener('alpine:init', () => {
         },
 
         async init() {
+            // console.log("vaultixApp.init() starting...");
             try {
+                // Ensure context is available
+                if (!globalThis.go && !runtime) {
+                    throw new Error("Wails context not found");
+                }
                 await this.loadSettings();
                 this.isLocked = await IsLocked();
                 this.showPasswordSetup = await NeedsSetup();
+                this.isUnsecuredImport = await IsUnsecuredImport();
 
-                if (!this.isLocked) {
+                // Consolidated Inactivity Tracker (Seconds-based from Settings)
+                this.lastActivity = Date.now();
+                setInterval(async () => {
+                    if (!this.isLocked && this.settings.auto_lock_interval > 0) {
+                        const inactiveSeconds = (Date.now() - this.lastActivity) / 1000;
+                        if (inactiveSeconds >= this.settings.auto_lock_interval) {
+                            if (await IsPasswordSet()) {
+                                await LockApp();
+                                this.isLocked = true;
+                                this.showToast("Application locked due to inactivity");
+                            }
+                        }
+                    }
+                }, 1000); 
+
+                ['mousedown', 'keydown', 'mousemove', 'touchstart'].forEach(evt => {
+                    window.addEventListener(evt, () => {
+                        this.lastActivity = Date.now();
+                    });
+                });
+
+                if (!this.isLocked && await IsVaultSet()) {
                     await this.loadAccounts();
                     await this.loadTOTPs();
                     await this.sanitizeTOTPs();
                 }
 
                 // Batch Update Listener
-                EventsOn("batch_update", (updates) => {
+                runtime.EventsOn("batch_update", (updates) => {
+                    let changed = false;
                     Object.keys(updates).forEach(key => {
                         const [type, email] = key.split(':');
                         const acc = this.accounts.find(a => a.email === email);
                         if (acc) {
-                            if (type === 'sync_start') acc.status = 'syncing';
-                            if (type === 'sync_complete') acc.status = 'connected';
-                            if (type === 'sync_error') acc.status = 'error';
-                            if (type === 'unread_count') acc.unread_count = updates[key];
+                            if (type === 'account_status') {
+                                if (acc.status !== updates[key]) {
+                                    acc.status = updates[key];
+                                    changed = true;
+                                }
+                            }
+                            if (type === 'unread_count') {
+                                if (acc.unread_count !== updates[key]) {
+                                    acc.unread_count = updates[key];
+                                    changed = true;
+                                }
+                            }
                         }
                     });
+                    if (changed) {
+                        // Directly update sortedAccounts without full re-sort if possible
+                        this.updateSortedAccounts(); 
+                    }
+                });
+
+                runtime.EventsOn("NewEmailNotification", (data) => {
+                    this.showToast(data.subject, `New Email: ${data.label}`, data.email);
+                    if (this.settings.sound) {
+                        this.notificationSound.currentTime = 0;
+                        this.notificationSound.play().catch(e => console.error("Sound play error:", e));
+                    }
                 });
 
                 // Load initial about info
@@ -144,25 +203,7 @@ document.addEventListener('alpine:init', () => {
                 console.error("Initialization error:", e);
             }
 
-            // Inactivity Tracker
-            // Inactivity Tracker
-            const updateActivity = () => { this.lastActivity = Date.now(); };
-            globalThis.addEventListener('mousemove', updateActivity);
-            globalThis.addEventListener('keydown', updateActivity);
-            globalThis.addEventListener('click', updateActivity);
-
-            setInterval(async () => {
-                if (!this.isLocked && this.settings.auto_lock_interval > 0) {
-                    const elapsed = (Date.now() - this.lastActivity) / 1000 / 60;
-                    if (elapsed >= this.settings.auto_lock_interval && await IsPasswordSet()) {
-                        await LockApp();
-                        this.isLocked = true;
-                        this.showToast("Application locked due to inactivity");
-                    }
-                }
-            }, 10000);
-
-            // Update check timer
+                // Update check timer
             this.checkForUpdates();
             setInterval(() => this.checkForUpdates(), 3600000);
 
@@ -225,6 +266,11 @@ document.addEventListener('alpine:init', () => {
                 console.error("Load accounts error:", e);
                 this.accounts = [];
             }
+            this.updateSortedAccounts();
+        },
+
+        updateSortedAccounts() {
+            this.sortedAccounts = [...this.accounts].sort((a, b) => (b.last_message_time || 0) - (a.last_message_time || 0));
         },
 
         async loadTOTPs() {
@@ -310,9 +356,33 @@ document.addEventListener('alpine:init', () => {
             this.messages = [];
             this.selectedMessage = null;
             this.messageBody = '';
+            this.currentFolder = 'INBOX';
             await this.loadCachedMessages(acc.email);
             if (this.messages.length === 0) {
                 await this.refreshInbox();
+            }
+        },
+
+        async setFolder(folder) {
+            this.currentFolder = folder;
+            this.messages = [];
+            this.selectedMessage = null;
+            this.messageBody = '';
+            if (folder === 'INBOX') {
+                await this.loadCachedMessages(this.selectedAccount.email);
+                if (this.messages.length === 0) await this.refreshInbox();
+            } else if (folder === 'SPAM') {
+                const spamName = await globalThis.go.app.App.DiscoverSpamFolder(this.selectedAccount.email);
+                if (spamName) {
+                    this.refreshing = true;
+                    try {
+                        this.messages = await globalThis.go.app.App.FetchEmails(this.selectedAccount.email, spamName, 50);
+                    } catch (e) {
+                        this.showToast("No Spam folder found or error");
+                    } finally {
+                        this.refreshing = false;
+                    }
+                }
             }
         },
 
@@ -333,13 +403,21 @@ document.addEventListener('alpine:init', () => {
             if (!this.selectedAccount) return;
             if (!silent) this.refreshing = true;
             try {
-                const msgs = await FetchInbox(this.selectedAccount.email, 50);
+                let msgs;
+                const folder = this.currentFolder || 'INBOX';
+                if (folder === 'SPAM') {
+                    const spamName = await globalThis.go.app.App.DiscoverSpamFolder(this.selectedAccount.email);
+                    msgs = await globalThis.go.app.App.FetchEmails(this.selectedAccount.email, spamName, 50);
+                } else {
+                    msgs = await FetchEmails(this.selectedAccount.email, folder, 50);
+                }
                 this.messages = msgs || [];
-                this.selectedAccount.status = 'connected';
+                // Reset status locally for responsiveness
+                const acc = this.accounts.find(a => a.email === this.selectedAccount.email);
+                if (acc) acc.status = 'connected';
             } catch (e) {
-                console.error("Refresh inbox error:", e);
-                this.showToast("Error: Connection failed");
-                this.selectedAccount.status = 'error';
+                console.error("Refresh error:", e);
+                this.showToast("Error refreshing folder");
             } finally {
                 if (!silent) this.refreshing = false;
             }
@@ -348,15 +426,17 @@ document.addEventListener('alpine:init', () => {
         async markAllAsRead() {
             if (!this.selectedAccount) return;
             try {
-                await MarkAllAsRead(this.selectedAccount.email);
+                const folder = this.currentFolder || 'INBOX';
+                await MarkAllAsRead(this.selectedAccount.email, folder);
                 this.messages.forEach(m => m.seen = true);
-                this.selectedAccount.unread_count = 0;
-                const acc = this.accounts.find(a => a.email === this.selectedAccount.email);
-                if (acc) acc.unread_count = 0;
-                this.showToast("All messages marked as read");
+                if (folder === 'INBOX') {
+                    const acc = this.accounts.find(a => a.email === this.selectedAccount.email);
+                    if (acc) acc.unread_count = 0;
+                }
+                this.showToast("Folder marked as read");
             } catch (e) {
-                console.error("Mark all as read error:", e);
-                this.showToast("Failed to mark all as read");
+                console.error("Mark all error:", e);
+                this.showToast("Failed to mark as read");
             }
         },
 
@@ -365,14 +445,16 @@ document.addEventListener('alpine:init', () => {
             this.messageBody = '';
             this.bodyLoading = true;
             try {
-                const result = await FetchBody(this.selectedAccount.email, msg.uid);
+                const folder = this.currentFolder || 'INBOX';
+                const result = await FetchBody(this.selectedAccount.email, folder, msg.uid);
                 if (result) {
                     this.messageBody = result[0];
                     this.selectedMessage.codes = result[1] || [];
                 }
                 if (!msg.seen) {
                     msg.seen = true;
-                    await MarkAsRead(this.selectedAccount.email, msg.uid);
+                    const folder = this.currentFolder || 'INBOX';
+                    await MarkAsRead(this.selectedAccount.email, folder, msg.uid);
                 }
             } catch (e) {
                 console.error("Error fetching body:", e);
@@ -502,17 +584,17 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        filteredAccounts() {
-            let list = [...this.accounts];
+        get visibleAccounts() {
+            const list = this.sortedAccounts;
             if (this.accountSearch) {
                 const q = this.accountSearch.toLowerCase();
-                list = list.filter(a => a.email.toLowerCase().includes(q) || (a.label && a.label.toLowerCase().includes(q)));
+                const filtered = list.filter(a => a.email.toLowerCase().includes(q) || (a.label && a.label.toLowerCase().includes(q)));
+                return this.sliceVisible(filtered);
             }
-            return list.sort((a, b) => (b.last_message_time || 0) - (a.last_message_time || 0));
+            return this.sliceVisible(list);
         },
 
-        get visibleAccounts() {
-            const list = this.filteredAccounts();
+        sliceVisible(list) {
             const startVisible = Math.floor(this.accountScrollTop / this.accountItemHeight);
             const endVisible = Math.ceil((this.accountScrollTop + this.accountViewportHeight) / this.accountItemHeight);
             
@@ -526,7 +608,11 @@ document.addEventListener('alpine:init', () => {
         },
 
         get accountsTotalHeight() {
-            return this.filteredAccounts().length * this.accountItemHeight;
+            const list = this.accountSearch ? this.sortedAccounts.filter(a => {
+                const q = this.accountSearch.toLowerCase();
+                return a.email.toLowerCase().includes(q) || (a.label && a.label.toLowerCase().includes(q));
+            }) : this.sortedAccounts;
+            return list.length * this.accountItemHeight;
         },
 
         handleAccountScroll(e) {
@@ -614,9 +700,61 @@ document.addEventListener('alpine:init', () => {
                 this.showImportModal = false;
                 await this.loadAccounts();
                 await this.loadSettings();
+                this.isUnsecuredImport = await IsUnsecuredImport();
+                this.showPasswordSetup = await NeedsSetup();
             } catch (e) {
                 this.showToast("Import failed: " + e);
             }
+        },
+
+        async openChangePassword() {
+            this.passwordSet = await IsPasswordSet();
+            this.changePassOld = '';
+            this.changePassNew = '';
+            this.changePassConfirm = ''; 
+            this.showChangePassword = true;
+            this.showSettings = false;
+        },
+
+        async submitSmartPassword() {
+            // Logic for "Smart Password Management" section
+            const passwordExists = await IsPasswordSet();
+            
+            if (!passwordExists) {
+                // Set Password Flow (New + Confirm)
+                if (!this.changePassNew || !this.changePassConfirm) {
+                    this.showToast("Please fill all fields", "Security");
+                    return;
+                }
+                if (this.changePassNew !== this.changePassConfirm) {
+                    this.showToast("Passwords do not match", "Security");
+                    return;
+                }
+                await SetAppPassword(this.changePassNew);
+                this.showToast("Master password set successfully");
+            } else {
+                // Change Password Flow (Old + New + Confirm)
+                if (!this.changePassOld || !this.changePassNew || !this.changePassConfirm) {
+                    this.showToast("Please fill all fields", "Security");
+                    return;
+                }
+                if (this.changePassNew !== this.changePassConfirm) {
+                    this.showToast("New passwords do not match", "Security");
+                    return;
+                }
+                try {
+                    const { ChangeAppPassword } = globalThis.go.app.App;
+                    await ChangeAppPassword(this.changePassOld, this.changePassNew);
+                    this.showToast("Vault password updated");
+                } catch (e) {
+                    this.showToast("Error: " + e, "Security");
+                    return;
+                }
+            }
+            this.showChangePassword = false;
+            this.changePassNew = '';
+            this.changePassOld = '';
+            this.changePassConfirm = '';
         },
 
         async submitBulkImport() {
@@ -664,6 +802,7 @@ document.addEventListener('alpine:init', () => {
             await this.loadTOTPs();
         },
 
+
         async skipSetupPassword() {
             if (await this.askConfirm("Skip Protection", "Are you sure? Your data will be stored without app-level password protection.")) {
                 await SkipAppPasswordSetup();
@@ -683,6 +822,7 @@ document.addEventListener('alpine:init', () => {
                 this.lastActivity = Date.now();
                 await this.loadAccounts();
                 await this.loadTOTPs();
+                // Ensure engine starts if enabled (handled in backend but good to know)
                 this.showToast("Vault unlocked");
             } else {
                 this.showToast("Invalid password", "Security");
@@ -697,9 +837,13 @@ document.addEventListener('alpine:init', () => {
 
         async lockAppManual() {
             if (await IsPasswordSet()) {
-                await LockApp();
+                await LockVault();
                 this.isLocked = true;
-                this.showToast("Application locked manually");
+                this.accounts = [];
+                this.sortedAccounts = [];
+                this.selectedAccount = null;
+                this.messages = [];
+                this.showToast("Vault locked and keys cleared", "Security");
             } else {
                 this.showToast("Setup master password in settings first", "Security");
                 this.showSettings = true;
@@ -722,6 +866,17 @@ document.addEventListener('alpine:init', () => {
             if (acc) acc.status = status;
         },
     }));
+
+    // Global Error Handler for better debugging
+    globalThis.addEventListener('error', (event) => {
+        console.error("Global JS Error:", event.error);
+        // Don't show toast here as it might not be initialized, 
+        // but it will be visible in DevTools
+    });
+
+    globalThis.addEventListener('unhandledrejection', (event) => {
+        console.error("Unhandled Promise Rejection:", event.reason);
+    });
 });
 
 Alpine.start();
