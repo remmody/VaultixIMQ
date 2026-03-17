@@ -91,7 +91,6 @@ func (c *Core) syncFolder(ctx context.Context, acc mail.Account, folderName stri
 				msg := msgs[0]
 				if cacheFolder == "INBOX" {
 					c.Accounts.UpdateLastMessageTime(acc.Email, msg.DateUnix)
-					c.Batcher.Update("unread_count:"+acc.Email, c.countUnread(acc.Email))
 				}
 
 				if c.Settings.Notifications {
@@ -144,6 +143,11 @@ func (c *Core) syncFolder(ctx context.Context, acc mail.Account, folderName stri
 			}
 		}
 	}
+
+	// Update unread count for UI consistency after every sync
+	if cacheFolder == "INBOX" {
+		c.Batcher.Update("unread_count:"+acc.Email, c.countUnread(acc.Email))
+	}
 }
 
 func (c *Core) Notify(ctx context.Context, title, message string) {
@@ -161,6 +165,7 @@ func (c *Core) NotifyWithEmail(ctx context.Context, title, message string, email
 			safeMsg = stripControlChars(message)
 		}
 
+		beeep.AppName = "VaultixIMQ"
 		_ = beeep.Notify(safeTitle, safeMsg, "")
 		if ctx != nil {
 			wailsRuntime.EventsEmit(ctx, "notification", map[string]interface{}{

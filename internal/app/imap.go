@@ -87,6 +87,9 @@ func (c *Core) FetchEmails(emailAddress string, folder string, limit int) ([]mai
 
 	var mails []mail.Message
 	for msg := range messages {
+		if msg == nil || msg.Envelope == nil {
+			continue
+		}
 		dateStr := msg.Envelope.Date.Format("01/02 15:04")
 		fromStr := ""
 		if len(msg.Envelope.From) > 0 {
@@ -230,6 +233,9 @@ func (c *Core) MarkAsRead(email string, folder string, uid uint32) error {
 	}
 	c.Mu.Unlock()
 
+	// Update unread count for UI consistency
+	c.Batcher.Update("unread_count:"+email, c.countUnread(email))
+
 	return nil
 }
 
@@ -299,6 +305,9 @@ func (c *Core) MarkAllAsRead(email string, folder string) error {
 		}
 	}
 	c.Mu.Unlock()
+
+	// Update unread count for UI consistency
+	c.Batcher.Update("unread_count:"+email, c.countUnread(email))
 
 	return nil
 }

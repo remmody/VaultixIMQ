@@ -80,7 +80,7 @@ document.addEventListener('alpine:init', () => {
         accountItemHeight: 60,
         accountBuffer: 10,
 
-        isLocked: false,
+        isLocked: true,
         showPasswordSetup: false,
         isUnsecuredImport: false,
         lockPass: '',
@@ -140,7 +140,7 @@ document.addEventListener('alpine:init', () => {
                 setInterval(async () => {
                     if (!this.isLocked && this.settings.auto_lock_interval > 0) {
                         const inactiveSeconds = (Date.now() - this.lastActivity) / 1000;
-                        if (inactiveSeconds >= this.settings.auto_lock_interval) {
+                        if (inactiveSeconds >= this.settings.auto_lock_interval * 60) {
                             if (await IsPasswordSet()) {
                                 await LockApp();
                                 this.isLocked = true;
@@ -254,12 +254,12 @@ document.addEventListener('alpine:init', () => {
         async loadAccounts() {
             try {
                 const accs = await GetAccounts();
-                const oldAccounts = [...this.accounts];
                 this.accounts = (accs || []).map(a => {
-                    const existing = oldAccounts.find(oa => oa.email === a.email);
+                    const existing = this.accounts.find(ea => ea.email === a.email);
                     return {
                         ...a,
-                        status: existing ? existing.status : (this.settings.auto_login ? 'syncing' : 'disconnected')
+                        status: existing ? existing.status : (this.settings.auto_login ? 'syncing' : 'disconnected'),
+                        unread_count: existing ? existing.unread_count : 0
                     };
                 });
             } catch (e) {
