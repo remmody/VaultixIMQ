@@ -7,7 +7,7 @@ require (
 	github.com/emersion/go-imap v1.2.1
 	github.com/gen2brain/beeep v0.11.2
 	github.com/pquerna/otp v1.5.0
-	github.com/wailsapp/wails/v2 v2.11.0
+	github.com/wailsapp/wails/v2 v2.12.0
 	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/crypto v0.49.0
 	golang.org/x/sys v0.42.0
@@ -17,6 +17,7 @@ require (
 require (
 	al.essio.dev/pkg/shellescape v1.5.1 // indirect
 	git.sr.ht/~jackmordaunt/go-toast v1.1.2 // indirect
+	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
