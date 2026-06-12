@@ -9,9 +9,9 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/zalando/go-keyring v0.2.6
-	golang.org/x/crypto v0.49.0
-	golang.org/x/sys v0.42.0
-	golang.org/x/text v0.35.0
+	golang.org/x/crypto v0.53.0
+	golang.org/x/sys v0.46.0
+	golang.org/x/text v0.38.0
 )
 
 require (
@@ -49,7 +49,7 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 )
 
 // replace github.com/wailsapp/wails/v2 v2.11.0 => C:\Users\Administrator\go\pkg\mod
