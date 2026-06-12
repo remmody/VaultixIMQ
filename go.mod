@@ -11,7 +11,7 @@ require (
 	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/crypto v0.49.0
 	golang.org/x/sys v0.42.0
-	golang.org/x/text v0.35.0
+	golang.org/x/text v0.38.0
 )
 
 require (
