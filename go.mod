@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/emersion/go-imap v1.2.1
-	github.com/gen2brain/beeep v0.11.2
+	github.com/gen2brain/beeep v0.11.3
 	github.com/pquerna/otp v1.5.0
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/zalando/go-keyring v0.2.6
